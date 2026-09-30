@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <!-- Plate Outer Rim -->
+  <circle cx="50" cy="50" r="46" fill="#FDFBF7" stroke="#38BDF8" stroke-width="4"/>
+  <!-- Plate Inner Ring -->
+  <circle cx="50" cy="50" r="36" fill="#FFFFFF" stroke="#BAE6FD" stroke-width="3" stroke-dasharray="3 3"/>
+  <!-- Cute Cheeks -->
+  <circle cx="34" cy="54" r="5" fill="#FED7AA" opacity="0.8"/>
+  <circle cx="66" cy="54" r="5" fill="#FED7AA" opacity="0.8"/>
+  <!-- Cute Eyes -->
+  <circle cx="38" cy="45" r="4" fill="#292524"/>
+  <circle cx="39.5" cy="43.5" r="1.5" fill="#FFFFFF"/>
+  <circle cx="62" cy="45" r="4" fill="#292524"/>
+  <circle cx="63.5" cy="43.5" r="1.5" fill="#FFFFFF"/>
+  <!-- Cute Smiling Mouth -->
+  <path d="M43 55 C46 60, 54 60, 57 55" stroke="#292524" stroke-width="3" stroke-linecap="round"/>
+  <!-- Tiny Fork & Spoon Accent -->
+  <path d="M12 40 L12 60 M10 40 L14 40" stroke="#4ADE80" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M88 40 L88 60 M86 42 Q88 38 90 42" stroke="#FB923C" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

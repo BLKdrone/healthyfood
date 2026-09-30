@@ -1,0 +1,258 @@
+export interface Meal {
+  id: string;
+  title: string;
+  meal_type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  image_url: string;
+  portion_score: number;
+  calories: number;
+  sodium_mg: number;
+  carbs_g: number;
+  protein_g: number;
+  friendly_note: string;
+  logged_at: string;
+  time_label: string;
+}
+
+export interface DailyTargets {
+  calorie_target: number;
+  sodium_limit_mg: number;
+  carbs_limit_g: number;
+  protein_target_g: number;
+  water_target_ml: number;
+}
+
+export interface Profile {
+  id: string;
+  email: string;
+  display_name: string;
+  avatar_url: string;
+  streak_count: number;
+  level: number;
+  level_name: string;
+}
+
+export interface Goal {
+  id: string;
+  goal_key: string;
+  label: string;
+  description: string;
+  is_active: boolean;
+  tag: string;
+}
+
+export interface NextMealOption {
+  id: string;
+  title: string;
+  tag: string;
+  badge_color: 'mint' | 'peach' | 'butter' | 'softblue';
+  description: string;
+  image_url: string;
+  calories: number;
+  sodium_mg: number;
+  carbs_g: number;
+  protein_g: number;
+  fiber_g: number;
+  why_this_meal: string;
+  prep_time: string;
+  highlights: string[];
+}
+
+export interface RxSuggestion {
+  id: string;
+  title: string;
+  calories: number;
+  sodium_mg: number;
+  protein_g: number;
+  carbs_g: number;
+  tags: string[];
+  image_url: string;
+  dietitian_note: string;
+}
+
+export const INITIAL_PROFILE: Profile = {
+  id: 'demo-user-123',
+  email: 'alex@platepal.app',
+  display_name: 'Alex Morgan',
+  avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  streak_count: 5,
+  level: 3,
+  level_name: 'Portion Pro',
+};
+
+export const INITIAL_DAILY_TARGETS: DailyTargets = {
+  calorie_target: 2000,
+  sodium_limit_mg: 1800,
+  carbs_limit_g: 175,
+  protein_target_g: 90,
+  water_target_ml: 2000,
+};
+
+export const INITIAL_GOALS: Goal[] = [
+  {
+    id: 'g-1',
+    goal_key: 'lower_sodium',
+    label: 'Lower sodium',
+    description: 'Keep daily sodium strictly under 1,800mg to support cardiovascular health.',
+    is_active: true,
+    tag: 'Heart Care',
+  },
+  {
+    id: 'g-2',
+    goal_key: 'control_blood_sugar',
+    label: 'Control blood sugar',
+    description: 'Pair carbs with lean protein and fiber to smooth glucose curves.',
+    is_active: true,
+    tag: 'Metabolism',
+  },
+  {
+    id: 'g-3',
+    goal_key: 'maintain_weight',
+    label: 'Maintain weight',
+    description: 'Plate rule: 50% fiber veggies, 25% protein, 25% complex carbs.',
+    is_active: true,
+    tag: 'Balance',
+  },
+  {
+    id: 'g-4',
+    goal_key: 'increase_fiber',
+    label: 'Boost dietary fiber',
+    description: 'Aim for 30g+ daily from leafy greens, berries, legumes, and seeds.',
+    is_active: false,
+    tag: 'Gut Health',
+  },
+];
+
+export const INITIAL_MEALS: Meal[] = [
+  {
+    id: 'm-1',
+    title: 'Avocado Toast & Poached Egg Bowl',
+    meal_type: 'breakfast',
+    image_url: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=500&auto=format&fit=crop&q=80',
+    portion_score: 9.6,
+    calories: 410,
+    sodium_mg: 320,
+    carbs_g: 38,
+    protein_g: 18,
+    friendly_note: 'Terrific portioning! Healthy monounsaturated fats paired with whole sourdough.',
+    logged_at: '2026-09-30T08:15:00Z',
+    time_label: '8:15 AM',
+  },
+  {
+    id: 'm-2',
+    title: 'Mediterranean Herb Chicken & Greens',
+    meal_type: 'lunch',
+    image_url: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=80',
+    portion_score: 9.1,
+    calories: 620,
+    sodium_mg: 580,
+    carbs_g: 62,
+    protein_g: 38,
+    friendly_note: 'Great 50% vegetable ratio! Sodium was well within our midday budget.',
+    logged_at: '2026-09-30T12:45:00Z',
+    time_label: '12:45 PM',
+  },
+  {
+    id: 'm-3',
+    title: 'Greek Yogurt, Blueberries & Walnuts',
+    meal_type: 'snack',
+    image_url: 'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=500&auto=format&fit=crop&q=80',
+    portion_score: 9.8,
+    calories: 210,
+    sodium_mg: 75,
+    carbs_g: 18,
+    protein_g: 14,
+    friendly_note: 'Smart low-sodium pick! Antioxidants and protein keep hunger calm.',
+    logged_at: '2026-09-30T15:40:00Z',
+    time_label: '3:40 PM',
+  },
+];
+
+export const RX_SUGGESTIONS: RxSuggestion[] = [
+  {
+    id: 'rx-1',
+    title: 'Citrus Glazed Wild Salmon & Asparagus',
+    calories: 460,
+    sodium_mg: 240,
+    protein_g: 39,
+    carbs_g: 18,
+    tags: ['Low Sodium', 'High Omega-3'],
+    image_url: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=500&auto=format&fit=crop&q=80',
+    dietitian_note: 'Prescribed for heart rate variability and blood pressure stability.',
+  },
+  {
+    id: 'rx-2',
+    title: 'Crispy Lemon Tofu & Edamame Bowl',
+    calories: 420,
+    sodium_mg: 290,
+    protein_g: 28,
+    carbs_g: 32,
+    tags: ['Plant Protein', 'Low GI'],
+    image_url: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=500&auto=format&fit=crop&q=80',
+    dietitian_note: 'High plant fiber slows digestion and keeps post-meal glucose steady.',
+  },
+  {
+    id: 'rx-3',
+    title: 'Herb-Roasted Turkey & Sweet Potato Mash',
+    calories: 480,
+    sodium_mg: 310,
+    protein_g: 42,
+    carbs_g: 36,
+    tags: ['Lean Protein', 'Potassium Rich'],
+    image_url: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=500&auto=format&fit=crop&q=80',
+    dietitian_note: 'Naturally high in potassium to gently balance electrolytes.',
+  },
+];
+
+export const NEXT_MEAL_OPTIONS: NextMealOption[] = [
+  {
+    id: 'opt-low-sodium',
+    title: 'Steamed Lemon Cod with Roasted Zucchini & Quinoa',
+    tag: 'Low Sodium Recovery',
+    badge_color: 'mint',
+    description: 'Delicate Atlantic cod seasoned with fresh dill, cracked black pepper, and lemon zest on zucchini ribbons.',
+    image_url: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=500&auto=format&fit=crop&q=80',
+    calories: 440,
+    sodium_mg: 210,
+    carbs_g: 24,
+    protein_g: 36,
+    fiber_g: 8,
+    why_this_meal:
+      'Because lunch included 580mg of sodium, this dinner provides 36g of restorative lean protein while staying under 220mg of sodium, safeguarding your 1,800mg daily doctor limit.',
+    prep_time: '20 mins',
+    highlights: ['Doctor Rx Match', 'Ultra-low sodium (<220mg)', 'Rich in EPA/DHA'],
+  },
+  {
+    id: 'opt-high-protein',
+    title: 'Herb-Crusted Chicken Breast with Sautéed Broccolini',
+    tag: 'High Protein Boost',
+    badge_color: 'peach',
+    description: 'Juicy skillet chicken breast with rosemary, olive oil drizzle, and tender blistered broccolini.',
+    image_url: 'https://images.unsplash.com/photo-1532550907401-a500c9a57435?w=500&auto=format&fit=crop&q=80',
+    calories: 460,
+    sodium_mg: 340,
+    carbs_g: 16,
+    protein_g: 44,
+    fiber_g: 6,
+    why_this_meal:
+      'Leaves 14g of carbs unspent while pumping 44g of clean protein, closing your daily protein gap without triggering any late-evening blood glucose spikes.',
+    prep_time: '25 mins',
+    highlights: ['44g Pure Protein', 'Low Carbohydrate (<20g)', 'Long-lasting Satiety'],
+  },
+  {
+    id: 'opt-high-fiber',
+    title: 'Warm Spiced Chickpea & Cauliflower Rainbow Bowl',
+    tag: 'High Fiber Balance',
+    badge_color: 'butter',
+    description: 'Turmeric-roasted cauliflower florets, spiced chickpeas, baby spinach, and sesame lemon tahini sauce.',
+    image_url: 'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?w=500&auto=format&fit=crop&q=80',
+    calories: 470,
+    sodium_mg: 290,
+    carbs_g: 32,
+    protein_g: 19,
+    fiber_g: 13,
+    why_this_meal:
+      'Packed with 13g of prebiotic soluble fiber that supports gut microbiome diversity and ensures deep, uninterrupted overnight recovery.',
+    prep_time: '15 mins',
+    highlights: ['13g Prebiotic Fiber', '100% Plant-powered', 'Natural anti-inflammatory'],
+  },
+];

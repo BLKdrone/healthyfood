@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+@theme {
+  --font-nunito: var(--font-nunito), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  
+  --color-canvas: #FFFDF9;
+  --color-canvas-card: #FFFFFF;
+  --color-card-border: #E7E5E4;
+  
+  /* Mint */
+  --color-mint-50: #f0fdf4;
+  --color-mint-100: #dcfce7;
+  --color-mint-200: #bbf7d0;
+  --color-mint-300: #86efac;
+  --color-mint-400: #4ade80;
+  --color-mint-500: #10b981;
+  --color-mint-600: #059669;
+
+  /* Peach */
+  --color-peach-50: #fff7ed;
+  --color-peach-100: #ffedd5;
+  --color-peach-200: #fed7aa;
+  --color-peach-300: #fdba74;
+  --color-peach-400: #fb923c;
+  --color-peach-500: #f97316;
+
+  /* Butter Yellow */
+  --color-butter-50: #fefce8;
+  --color-butter-100: #fef9c3;
+  --color-butter-200: #fef08a;
+  --color-butter-300: #fde047;
+  --color-butter-400: #facc15;
+  --color-butter-500: #eab308;
+
+  /* Soft Blue */
+  --color-softblue-50: #f0f9ff;
+  --color-softblue-100: #e0f2fe;
+  --color-softblue-200: #bae6fd;
+  --color-softblue-300: #7dd3fc;
+  --color-softblue-400: #38bdf8;
+  --color-softblue-500: #0284c7;
+
+  /* Lavender */
+  --color-lavender-50: #faf5ff;
+  --color-lavender-100: #f3e8ff;
+  --color-lavender-200: #e9d5ff;
+  --color-lavender-400: #c084fc;
+}
+
+:root {
+  --background: #FFFDF9;
+  --foreground: #292524;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-nunito), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Fluid type utility */
+.text-fluid-title {
+  font-size: clamp(1.5rem, 4vw + 0.5rem, 2.25rem);
+  line-height: 1.15;
+}
+
+.text-fluid-subtitle {
+  font-size: clamp(1rem, 2vw + 0.5rem, 1.25rem);
+  line-height: 1.35;
+}
+
+/* iOS Safe Area Padding */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+/* Dotted animation for Camera plate overlay zones */
+@keyframes dash-pulse {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.animate-dash-pulse {
+  stroke-dasharray: 6 6;
+  animation: dash-pulse 1.2s linear infinite;
+}
+
+/* Cute Soft Card styling */
+.pal-card {
+  border-radius: 24px;
+  border-width: 2px;
+  border-color: #f5f5f4;
+  background-color: #ffffff;
+  box-shadow: 0 4px 20px -2px rgba(41, 37, 36, 0.05);
+}
+
+.pal-card-interactive {
+  border-radius: 24px;
+  border-width: 2px;
+  border-color: #f5f5f4;
+  background-color: #ffffff;
+  box-shadow: 0 4px 20px -2px rgba(41, 37, 36, 0.05);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.pal-card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px -4px rgba(41, 37, 36, 0.08);
+}
