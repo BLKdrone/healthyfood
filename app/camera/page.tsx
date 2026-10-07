@@ -345,11 +345,20 @@ export default function CameraPage() {
                       butter: 'bg-amber-400 text-amber-950 border-amber-300',
                     };
 
+                    const dotBgColors = {
+                      mint: 'bg-emerald-400',
+                      peach: 'bg-orange-400',
+                      butter: 'bg-amber-400',
+                    };
+
+                    const count = Number.isFinite(zone.dotCount)
+                      ? Math.min(12, Math.max(4, Math.round(zone.dotCount)))
+                      : 8;
+
                     return (
                       <div
                         key={zone.id}
-                        className={`absolute border-2 border-dashed rounded-3xl animate-dash-pulse ${borderColors[zone.color]
-                          } transition-all`}
+                        className={`absolute rounded-3xl animate-pulse-slow ${borderColors[zone.color].replace(/border-[a-z0-9-]+/g, '')} transition-all`}
                         style={{
                           top: `${displayBox.top}%`,
                           left: `${displayBox.left}%`,
@@ -357,6 +366,37 @@ export default function CameraPage() {
                           height: `${displayBox.height}%`,
                         }}
                       >
+                        {/* Dynamic Dots Array */}
+                        {Array.from({ length: count }).map((_, i) => {
+                          const width = displayBox.width * SCANNER_ASPECT_RATIO;
+                          const height = displayBox.height;
+                          const distance = (i / count) * 2 * (width + height);
+                          let left: number;
+                          let top: number;
+
+                          if (distance < width) {
+                            left = (distance / width) * 100;
+                            top = 0;
+                          } else if (distance < width + height) {
+                            left = 100;
+                            top = ((distance - width) / height) * 100;
+                          } else if (distance < 2 * width + height) {
+                            left = 100 - ((distance - width - height) / width) * 100;
+                            top = 100;
+                          } else {
+                            left = 0;
+                            top = 100 - ((distance - 2 * width - height) / height) * 100;
+                          }
+
+                          return (
+                            <div
+                              key={i}
+                              className={`absolute w-2.5 h-2.5 -ml-[5px] -mt-[5px] rounded-full shadow-sm ${dotBgColors[zone.color]}`}
+                              style={{ left: `${left}%`, top: `${top}%` }}
+                            />
+                          );
+                        })}
+
                         {/* Speech Bubble Floating Above / Inside Zone */}
                         <div
                           className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-black px-2.5 py-1 rounded-full shadow-lg border ${bubbleColors[zone.color]

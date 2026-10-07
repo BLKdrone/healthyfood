@@ -11,6 +11,7 @@ export interface PlateZone {
   status: 'optimal' | 'increase' | 'decrease';
   color: 'mint' | 'peach' | 'butter';
   bubbleMessage: string;
+  dotCount: number;
   boxCoords: {
     top: number; // percentage from top 0-100
     left: number; // percentage from left 0-100
@@ -59,6 +60,12 @@ const responseSchema: Schema = {
           },
           color: { type: Type.STRING, enum: ['mint', 'peach', 'butter'] },
           bubbleMessage: { type: Type.STRING },
+          dotCount: {
+            type: Type.NUMBER,
+            description: 'An integer from 4 to 12 based on the food region\'s apparent size and visual complexity, not nutritional value. Use 4 for a small/simple item, about 7 for a medium-sized salad or food region, and 12 for a large/complex region.',
+            minimum: 4,
+            maximum: 12,
+          },
           boxCoords: {
             type: Type.OBJECT,
             properties: {
@@ -99,6 +106,7 @@ const responseSchema: Schema = {
           'status',
           'color',
           'bubbleMessage',
+          'dotCount',
           'boxCoords',
         ],
       },
@@ -162,7 +170,7 @@ export async function analyzeMeal(
                 },
               },
               {
-                text: 'Analyze the food visible in this meal image and return valid JSON matching the schema. Estimate calories, macros, and sodium. Return at least one zone for the visible food; include a separate zone for each visible vegetable, protein, or carbohydrate region. Never return an empty zones array. For every boxCoords value, use a percentage from 0 to 100 relative to the full input image, not the plate or screen. The origin is the image top-left; top and left locate the box top-left, while width and height are its size. Keep each box within the image boundaries. Give a portion score from 0 to 10 and friendly feedback.',
+                text: 'Analyze the food visible in this meal image and return valid JSON matching the schema. Estimate calories, macros, and sodium. Return at least one zone for the visible food; include a separate zone for each visible vegetable, protein, or carbohydrate region. Never return an empty zones array. For every boxCoords value, use a percentage from 0 to 100 relative to the full input image, not the plate or screen. The origin is the image top-left; top and left locate the box top-left, while width and height are its size. Keep each box within the image boundaries. Give a portion score from 0 to 10 and friendly feedback. For each zone, choose an integer dotCount from 4 to 12 based on the food region\'s apparent size and visual complexity, not its nutritional value: 4 for a small/simple item, about 7 for a medium-sized salad or region, and 12 for a large/complex region.',
               },
             ],
           },
