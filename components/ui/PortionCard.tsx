@@ -3,16 +3,17 @@
 import React from 'react';
 import Image from 'next/image';
 import { Card } from './Card';
-import { Star, Flame, Sparkles } from 'lucide-react';
+import { Star, Flame, Sparkles, Trash2 } from 'lucide-react';
 import type { Meal } from '@/lib/mock-data';
 
 interface PortionCardProps {
   meal: Meal;
   className?: string;
   onClick?: () => void;
+  onDelete?: () => void;
 }
 
-export function PortionCard({ meal, className = '', onClick }: PortionCardProps) {
+export function PortionCard({ meal, className = '', onClick, onDelete }: PortionCardProps) {
   // Score styling
   const scoreColor =
     meal.portion_score >= 9.0
@@ -52,19 +53,35 @@ export function PortionCard({ meal, className = '', onClick }: PortionCardProps)
         {/* Content Details */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <div>
+            <div className="min-w-0 flex-1">
               <span className="text-xs font-semibold text-stone-500">{meal.time_label}</span>
-              <h4 className="text-base sm:text-lg font-bold text-stone-900 leading-snug truncate">
+              <h4 className="text-base sm:text-lg font-bold text-stone-900 leading-snug break-words">
                 {meal.title}
               </h4>
             </div>
 
-            {/* Portion Score Pill */}
-            <div
-              className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full border-2 font-black text-sm ${scoreColor}`}
-            >
-              <Star className="w-3.5 h-3.5 fill-current text-amber-500" />
-              <span>{meal.portion_score.toFixed(1)}</span>
+            <div className="flex items-center gap-2">
+              {/* Portion Score Pill */}
+              <div
+                className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full border-2 font-black text-sm ${scoreColor}`}
+              >
+                <Star className="w-3.5 h-3.5 fill-current text-amber-500" />
+                <span>{meal.portion_score.toFixed(1)}</span>
+              </div>
+              
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete();
+                  }}
+                  className="p-1.5 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors cursor-pointer"
+                  title="Delete meal"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
 

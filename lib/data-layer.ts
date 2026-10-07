@@ -212,6 +212,44 @@ export const DataLayer = {
     return newMeal;
   },
 
+  async uploadMealImage(fileBlob: Blob, fileExt: string): Promise<string | null> {
+    if (this.isLive()) {
+      const supabase = createClient();
+      if (supabase) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+          const { data, error } = await supabase.storage
+            .from('meal-images')
+            .upload(fileName, fileBlob, {
+              cacheControl: '3600',
+              upsert: false
+            });
+          
+          if (!error && data) {
+            const { data: { publicUrl } } = supabase.storage
+              .from('meal-images')
+              .getPublicUrl(fileName);
+            return publicUrl;
+          }
+        }
+      }
+    }
+    return null;
+  },
+
+  async deleteMeal(id: string): Promise<void> {
+    if (this.isLive()) {
+      const supabase = createClient();
+      if (supabase) {
+        await supabase.from('meals').delete().eq('id', id);
+      }
+    }
+    const currentMeals = await this.getMeals();
+    const updatedMeals = currentMeals.filter((m) => m.id !== id);
+    setStored(STORAGE_KEYS.MEALS, updatedMeals);
+  },
+
   getRxSuggestions(): RxSuggestion[] {
     return RX_SUGGESTIONS;
   },

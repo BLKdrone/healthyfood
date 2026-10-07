@@ -221,11 +221,31 @@ export default function CameraPage() {
   // Handle logging meal
   const handleLogMeal = async () => {
     if (!analysisResult) return;
+    
+    setIsLogged(true); // Disable button immediately while uploading
+
+    let finalImageUrl = selectedImage || SAMPLE_DISHES[0].url;
+
+    // If it's a local object URL or data URL, upload it to Supabase first
+    if (finalImageUrl.startsWith('blob:') || finalImageUrl.startsWith('data:')) {
+      try {
+        const response = await fetch(finalImageUrl);
+        const blob = await response.blob();
+        const ext = blob.type.split('/')[1] || 'jpg';
+        
+        const uploadedUrl = await DataLayer.uploadMealImage(blob, ext);
+        if (uploadedUrl) {
+          finalImageUrl = uploadedUrl;
+        }
+      } catch (err) {
+        console.error("Failed to upload image to Supabase", err);
+      }
+    }
 
     await DataLayer.logMeal({
       title: analysisResult.dishName,
       meal_type: 'dinner',
-      image_url: selectedImage || SAMPLE_DISHES[0].url,
+      image_url: finalImageUrl,
       portion_score: analysisResult.portionScore,
       calories: analysisResult.calories,
       sodium_mg: analysisResult.sodium_mg,
@@ -234,7 +254,6 @@ export default function CameraPage() {
       friendly_note: analysisResult.friendlyFeedback,
     });
 
-    setIsLogged(true);
     fireConfetti();
     setTimeout(() => {
       router.push('/');

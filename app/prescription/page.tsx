@@ -8,7 +8,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Mascot } from '@/components/mascot/Mascot';
 import { fireConfetti } from '@/components/effects/Confetti';
 import { DataLayer } from '@/lib/data-layer';
-import type { Goal, RxSuggestion } from '@/lib/mock-data';
+import type { Goal, RxSuggestion, Meal } from '@/lib/mock-data';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -23,6 +23,7 @@ import {
 export default function PrescriptionPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [rxSuggestions, setRxSuggestions] = useState<RxSuggestion[]>([]);
+  const [meals, setMeals] = useState<Meal[]>([]);
   const [checklist, setChecklist] = useState([
     {
       id: 'chk-1',
@@ -55,6 +56,8 @@ export default function PrescriptionPage() {
       const g = await DataLayer.getGoals();
       setGoals(g);
       setRxSuggestions(DataLayer.getRxSuggestions());
+      const m = await DataLayer.getMeals();
+      setMeals(m);
     }
     loadData();
   }, []);
@@ -71,6 +74,8 @@ export default function PrescriptionPage() {
     );
     fireConfetti({ particleCount: 15 });
   };
+
+  const consumedSodium = meals.reduce((sum, m) => sum + m.sodium_mg, 0);
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-fadeIn">
@@ -186,14 +191,14 @@ export default function PrescriptionPage() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-stone-700">Sodium Limit</span>
                 <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                  65% used
+                  {Math.round((consumedSodium / 1800) * 100)}% used
                 </span>
               </div>
               <div className="text-xl font-black text-stone-900">
-                1,180 <span className="text-xs font-normal text-stone-500">/ 1,800 mg</span>
+                {consumedSodium} <span className="text-xs font-normal text-stone-500">/ 1,800 mg</span>
               </div>
-              <ProgressBar current={1180} max={1800} autoStatusColor size="sm" showValues={false} />
-              <p className="text-[11px] text-stone-500">620 mg remaining for dinner.</p>
+              <ProgressBar current={consumedSodium} max={1800} autoStatusColor size="sm" showValues={false} />
+              <p className="text-[11px] text-stone-500">{Math.max(1800 - consumedSodium, 0)} mg remaining for dinner.</p>
             </Card>
 
             {/* Added Sugar Cap */}

@@ -287,7 +287,14 @@ export default function HomePage() {
           {/* Meal Cards List */}
           <div className="space-y-3.5">
             {meals.map((meal) => (
-              <PortionCard key={meal.id} meal={meal} />
+              <PortionCard
+                key={meal.id}
+                meal={meal}
+                onDelete={async () => {
+                  await DataLayer.deleteMeal(meal.id);
+                  setMeals((prev) => prev.filter((m) => m.id !== meal.id));
+                }}
+              />
             ))}
           </div>
 
