@@ -39,6 +39,37 @@ const SAMPLE_DISHES = [
   },
 ];
 
+const SCANNER_ASPECT_RATIO = 9 / 16;
+
+function mapBoxToCoverFrame(
+  box: { top: number; left: number; width: number; height: number },
+  sourceAspectRatio: number | null
+) {
+  const imageAspectRatio = sourceAspectRatio ?? SCANNER_ASPECT_RATIO;
+  const visibleWidth = Math.min(1, SCANNER_ASPECT_RATIO / imageAspectRatio);
+  const visibleHeight = Math.min(1, imageAspectRatio / SCANNER_ASPECT_RATIO);
+  const cropLeft = (1 - visibleWidth) / 2;
+  const cropTop = (1 - visibleHeight) / 2;
+
+  const left = (box.left / 100 - cropLeft) / visibleWidth;
+  const top = (box.top / 100 - cropTop) / visibleHeight;
+  const right = (box.left + box.width) / 100;
+  const bottom = (box.top + box.height) / 100;
+  const clippedLeft = Math.max(0, left);
+  const clippedTop = Math.max(0, top);
+  const clippedRight = Math.min(1, (right - cropLeft) / visibleWidth);
+  const clippedBottom = Math.min(1, (bottom - cropTop) / visibleHeight);
+
+  if (clippedRight <= clippedLeft || clippedBottom <= clippedTop) return null;
+
+  return {
+    top: clippedTop * 100,
+    left: clippedLeft * 100,
+    width: (clippedRight - clippedLeft) * 100,
+    height: (clippedBottom - clippedTop) * 100,
+  };
+}
+
 export default function CameraPage() {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -50,11 +81,14 @@ export default function CameraPage() {
   const [selectedImage, setSelectedImage] = useState<string | null>(SAMPLE_DISHES[0].url);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analysisResult, setAnalysisResult] = useState<MealAnalysisResult | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisImageAspectRatio, setAnalysisImageAspectRatio] = useState<number | null>(null);
   const [isLogged, setIsLogged] = useState<boolean>(false);
 
   // Initialize camera
   const startCamera = useCallback(async () => {
     setCameraError(null);
+    setAnalysisError(null);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera API is not supported in this browser.');
@@ -98,11 +132,14 @@ export default function CameraPage() {
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setAnalysisResult(null);
+    setAnalysisError(null);
+    setAnalysisImageAspectRatio(null);
     try {
       let imagePayload = selectedImage;
 
       // Helper to scale down images for the API
       const scaleDownImage = (source: CanvasImageSource, width: number, height: number) => {
+        if (width > 0 && height > 0) setAnalysisImageAspectRatio(width / height);
         const MAX_SIZE = 1024;
         let newWidth = width;
         let newHeight = height;
@@ -161,6 +198,9 @@ export default function CameraPage() {
       setAnalysisResult(result);
     } catch (error) {
       console.error("Analysis error:", error);
+      setAnalysisError(
+        error instanceof Error ? error.message : 'Meal analysis failed. Please try again.'
+      );
     } finally {
       setIsAnalyzing(false);
     }
@@ -174,6 +214,7 @@ export default function CameraPage() {
       const objectUrl = URL.createObjectURL(file);
       setSelectedImage(objectUrl);
       setAnalysisResult(null);
+      setAnalysisError(null);
     }
   };
 
@@ -267,6 +308,12 @@ export default function CameraPage() {
               {analysisResult && (
                 <div className="absolute inset-0 pointer-events-none z-20">
                   {analysisResult.zones.map((zone) => {
+                    const displayBox = mapBoxToCoverFrame(
+                      zone.boxCoords,
+                      analysisImageAspectRatio
+                    );
+                    if (!displayBox) return null;
+
                     const borderColors = {
                       mint: 'border-emerald-400 bg-emerald-500/15 text-emerald-950',
                       peach: 'border-orange-400 bg-orange-500/15 text-orange-950',
@@ -282,21 +329,19 @@ export default function CameraPage() {
                     return (
                       <div
                         key={zone.id}
-                        className={`absolute border-2 border-dashed rounded-3xl animate-dash-pulse ${
-                          borderColors[zone.color]
-                        } transition-all`}
+                        className={`absolute border-2 border-dashed rounded-3xl animate-dash-pulse ${borderColors[zone.color]
+                          } transition-all`}
                         style={{
-                          top: `${zone.boxCoords.top}%`,
-                          left: `${zone.boxCoords.left}%`,
-                          width: `${zone.boxCoords.width}%`,
-                          height: `${zone.boxCoords.height}%`,
+                          top: `${displayBox.top}%`,
+                          left: `${displayBox.left}%`,
+                          width: `${displayBox.width}%`,
+                          height: `${displayBox.height}%`,
                         }}
                       >
                         {/* Speech Bubble Floating Above / Inside Zone */}
                         <div
-                          className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-black px-2.5 py-1 rounded-full shadow-lg border ${
-                            bubbleColors[zone.color]
-                          } animate-bounce`}
+                          className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-black px-2.5 py-1 rounded-full shadow-lg border ${bubbleColors[zone.color]
+                            } animate-bounce`}
                         >
                           {zone.bubbleMessage}
                         </div>
@@ -344,6 +389,22 @@ export default function CameraPage() {
                     <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
                     Pal is analyzing your portions...
                   </p>
+                </div>
+              ) : analysisError ? (
+                <div className="space-y-2 rounded-2xl bg-white/95 p-3 text-stone-900 shadow-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <p role="alert" className="break-words text-xs font-semibold">
+                      {analysisError}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAnalyze}
+                    className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-500 py-2 text-xs font-bold text-white hover:bg-emerald-600"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" /> Try Again
+                  </button>
                 </div>
               ) : analysisResult ? (
                 <div className="space-y-3">
@@ -456,12 +517,12 @@ export default function CameraPage() {
                     stopCamera();
                     setSelectedImage(dish.url);
                     setAnalysisResult(null);
+                    setAnalysisError(null);
                   }}
-                  className={`p-1.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
-                    selectedImage === dish.url
-                      ? 'border-emerald-500 bg-emerald-50/70 shadow-sm'
-                      : 'border-stone-200 bg-stone-50 hover:bg-stone-100'
-                  }`}
+                  className={`p-1.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${selectedImage === dish.url
+                    ? 'border-emerald-500 bg-emerald-50/70 shadow-sm'
+                    : 'border-stone-200 bg-stone-50 hover:bg-stone-100'
+                    }`}
                 >
                   <div className="relative w-full h-16 rounded-xl overflow-hidden mb-1.5 bg-stone-200">
                     <Image
