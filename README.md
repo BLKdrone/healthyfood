@@ -84,11 +84,16 @@ Copy `.env.example` to `.env.local`:
 ```bash
 cp .env.example .env.local
 ```
-Fill in your Supabase credentials in `.env.local` (or leave them empty to run in Demo Mode):
+Fill in your Supabase credentials in `.env.local` (or leave them empty to run in Demo Mode). 
+Also add your Gemini API key for the AI functionality. To get a key:
+1. Go to https://aistudio.google.com and sign in with your Google account.
+2. Click Get API key, then Create API key. If it asks for a project, let it create one for you.
+3. Copy the key into `.env.local`:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+GEMINI_API_KEY=your_key_here
 ```
 
 ### 3. Initialize Supabase Database

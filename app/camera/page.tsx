@@ -99,10 +99,68 @@ export default function CameraPage() {
     setIsAnalyzing(true);
     setAnalysisResult(null);
     try {
-      const result = await analyzeMeal(selectedImage || 'live-camera-frame');
+      let imagePayload = selectedImage;
+
+      // Helper to scale down images for the API
+      const scaleDownImage = (source: CanvasImageSource, width: number, height: number) => {
+        const MAX_SIZE = 1024;
+        let newWidth = width;
+        let newHeight = height;
+
+        if (width > height && width > MAX_SIZE) {
+          newHeight = Math.round((height * MAX_SIZE) / width);
+          newWidth = MAX_SIZE;
+        } else if (height > MAX_SIZE) {
+          newWidth = Math.round((width * MAX_SIZE) / height);
+          newHeight = MAX_SIZE;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(source, 0, 0, newWidth, newHeight);
+          return canvas.toDataURL('image/jpeg', 0.8);
+        }
+        return null;
+      };
+
+      if (isCameraActive && videoRef.current) {
+        const video = videoRef.current;
+        const scaled = scaleDownImage(video, video.videoWidth, video.videoHeight);
+        if (scaled) imagePayload = scaled;
+      } else if (selectedImage && selectedImage.startsWith('blob:')) {
+        // Convert blob URL to Image, then scale down
+        imagePayload = await new Promise((resolve, reject) => {
+          const img = new window.Image();
+          img.onload = () => {
+            const scaled = scaleDownImage(img, img.width, img.height);
+            resolve(scaled as string);
+          };
+          img.onerror = reject;
+          img.src = selectedImage;
+        });
+      } else if (selectedImage && selectedImage.startsWith('http')) {
+        // Unsplash images can be huge too! Let's scale them down by loading them into an Image
+        imagePayload = await new Promise((resolve, reject) => {
+          const img = new window.Image();
+          img.crossOrigin = 'anonymous'; // required for Unsplash to allow canvas read
+          img.onload = () => {
+            const scaled = scaleDownImage(img, img.width, img.height);
+            resolve(scaled as string);
+          };
+          img.onerror = reject;
+          img.src = selectedImage;
+        });
+      }
+
+      if (!imagePayload) throw new Error("No image available to analyze");
+
+      const result = await analyzeMeal(imagePayload);
       setAnalysisResult(result);
-    } catch {
-      // Fallback
+    } catch (error) {
+      console.error("Analysis error:", error);
     } finally {
       setIsAnalyzing(false);
     }
@@ -184,6 +242,7 @@ export default function CameraPage() {
                   src={selectedImage}
                   alt="Meal to analyze"
                   fill
+                  priority
                   className="object-cover"
                   sizes="(max-width: 640px) 100vw, 400px"
                 />

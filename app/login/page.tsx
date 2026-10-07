@@ -4,9 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Mascot } from '@/components/mascot/Mascot';
-import { isSupabaseConfigured, createClient } from '@/lib/supabase/client';
+import { isSupabaseConfigured } from '@/lib/supabase/client';
 import { DataLayer } from '@/lib/data-layer';
 import type { Profile } from '@/lib/mock-data';
+import { login, signup } from './actions';
 import {
   Lock,
   Mail,
@@ -23,8 +24,6 @@ import {
 export default function LoginPage() {
   const router = useRouter();
   const [isConfigured, setIsConfigured] = useState<boolean>(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
@@ -35,33 +34,25 @@ export default function LoginPage() {
     DataLayer.getProfile().then(setProfile);
   }, []);
 
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAuth = async (formData: FormData, mode: 'login' | 'signup') => {
     if (!isConfigured) return;
-
     setIsLoading(true);
     setAuthMessage(null);
     setIsError(false);
 
     try {
-      const supabase = createClient();
-      if (!supabase) return;
-
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
+      const result = mode === 'login' ? await login(formData) : await signup(formData);
+      
+      if (result?.error) {
         setIsError(true);
-        setAuthMessage(error.message);
-      } else {
-        setAuthMessage('Logged in successfully! Redirecting...');
-        setTimeout(() => router.push('/'), 1000);
+        setAuthMessage(result.error);
+      } else if (mode === 'signup') {
+        setAuthMessage('Signed up! Please check your email (or try logging in if auto-confirmed).');
+        setIsError(false);
       }
     } catch (err: unknown) {
       setIsError(true);
-      setAuthMessage(err instanceof Error ? err.message : 'Login failed');
+      setAuthMessage(err instanceof Error ? err.message : 'Auth failed');
     } finally {
       setIsLoading(false);
     }
@@ -173,7 +164,7 @@ export default function LoginPage() {
           {isConfigured ? 'Sign in with your email' : 'Sign In with Supabase'}
         </h3>
 
-        <form onSubmit={handleSignIn} className="space-y-4">
+        <form action={(formData) => handleAuth(formData, 'login')} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-stone-700 mb-1">
               Email Address
@@ -181,8 +172,7 @@ export default function LoginPage() {
             <div className="relative">
               <input
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                name="email"
                 placeholder="alex@platepal.app"
                 disabled={!isConfigured}
                 className="w-full pl-9 pr-4 py-2.5 rounded-2xl border-2 border-stone-200 focus:border-emerald-500 focus:outline-none text-sm text-stone-800 disabled:bg-stone-100 disabled:text-stone-400"
@@ -198,8 +188,7 @@ export default function LoginPage() {
             <div className="relative">
               <input
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                name="password"
                 placeholder="••••••••"
                 disabled={!isConfigured}
                 className="w-full pl-9 pr-4 py-2.5 rounded-2xl border-2 border-stone-200 focus:border-emerald-500 focus:outline-none text-sm text-stone-800 disabled:bg-stone-100 disabled:text-stone-400"
@@ -226,13 +215,23 @@ export default function LoginPage() {
           )}
 
           {isConfigured ? (
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              {isLoading ? 'Signing in...' : 'Sign In'} <ArrowRight className="w-4 h-4" />
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-1/2 py-3 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isLoading ? 'Wait...' : 'Sign In'}
+              </button>
+              <button
+                type="submit"
+                formAction={(formData) => handleAuth(formData, 'signup')}
+                disabled={isLoading}
+                className="w-1/2 py-3 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                Sign Up
+              </button>
+            </div>
           ) : (
             <button
               type="button"
