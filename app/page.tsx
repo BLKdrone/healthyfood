@@ -28,6 +28,17 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function formatFriendlyDate(date: Date): string {
+  return `${DAY_NAMES[date.getDay()]}, ${MONTH_NAMES[date.getMonth()]} ${date.getDate()}`;
+}
+
+function formatDisplayDate(date: Date): string {
+  return `${date.getDate()} ${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
+}
+
 function HomePageContent() {
   const searchParams = useSearchParams();
   const dateParam = searchParams.get('date');
@@ -77,11 +88,7 @@ function HomePageContent() {
   const isToday = formatDateKey(selectedDate) === formatDateKey(new Date());
   const dateLabel = isToday
     ? 'Today'
-    : selectedDate.toLocaleDateString('default', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-      });
+    : formatFriendlyDate(selectedDate);
 
   // Compute intake from meals logged on the selected date
   const totalCalories = displayedMeals.reduce((sum, m) => sum + m.calories, 0);
@@ -180,11 +187,17 @@ function HomePageContent() {
 
           <div className="relative flex items-center gap-2 px-2 cursor-pointer group">
             <CalendarIcon className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
-            <span className="text-sm font-black text-stone-900 group-hover:text-emerald-700 transition-colors">
+            <span
+              suppressHydrationWarning
+              className="text-sm font-black text-stone-900 group-hover:text-emerald-700 transition-colors"
+            >
               {dateLabel}
             </span>
-            <span className="text-xs text-stone-400 hidden sm:inline">
-              ({selectedDate.toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' })})
+            <span
+              suppressHydrationWarning
+              className="text-xs text-stone-400 hidden sm:inline"
+            >
+              ({formatDisplayDate(selectedDate)})
             </span>
             <input
               type="date"

@@ -24,12 +24,14 @@ import {
   Calendar as CalendarIcon,
 } from 'lucide-react';
 
-export const MEAL_TYPES: { id: Meal['meal_type']; label: string; icon: string }[] = [
+const MEAL_TYPES: { id: Meal['meal_type']; label: string; icon: string }[] = [
   { id: 'breakfast', label: 'Breakfast', icon: '🍳' },
   { id: 'lunch', label: 'Lunch', icon: '🥗' },
   { id: 'dinner', label: 'Dinner', icon: '🍽️' },
   { id: 'snack', label: 'Snack', icon: '🍎' },
 ];
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function getDefaultMealType(): Meal['meal_type'] {
   const hour = new Date().getHours();
@@ -202,10 +204,7 @@ function CameraContent() {
   const isToday = formatDateKey(targetDate) === formatDateKey(new Date());
   const dateBadgeLabel = isToday
     ? 'Today'
-    : targetDate.toLocaleDateString('default', {
-        month: 'short',
-        day: 'numeric',
-      });
+    : `${MONTH_NAMES[targetDate.getMonth()]} ${targetDate.getDate()}`;
 
   const [mealType, setMealType] = useState<Meal['meal_type']>(getDefaultMealType);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -588,9 +587,12 @@ function CameraContent() {
               </span>
 
               {/* Viewfinder Date & Meal Badge */}
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-900/80 backdrop-blur-md border border-white/20 text-white text-[11px] font-bold shadow-md">
+              <div
+                suppressHydrationWarning
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-900/80 backdrop-blur-md border border-white/20 text-white text-[11px] font-bold shadow-md"
+              >
                 <CalendarIcon className="w-3 h-3 text-emerald-400" />
-                <span>{dateBadgeLabel}</span>
+                <span suppressHydrationWarning>{dateBadgeLabel}</span>
                 <span className="text-white/40">•</span>
                 <span>
                   {MEAL_TYPES.find((t) => t.id === mealType)?.icon}{' '}
