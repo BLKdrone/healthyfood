@@ -1,0 +1,45 @@
+ The plan involves modifying the home and camera pages. The home page will be update...
+  Here is the plan to correlate both the HomePage and the Magic Plate Camera with the 
+  calendar.                                                                           
+                                                                                      
+  Per your project rules, no files have been modified yet. Here is the plan and the   
+  list of files to modify for your approval:                                          
+  ──────                                                                              
+  ### 💡 What this change will do:                                                    
+                                                                                      
+  1. HomePage (page.tsx):                                                             
+      • Fix Daily Calculations: Currently, the Calorie Ring and Sodium/Carb/Protein   
+      mini-bars sum all meals across history instead of the active date. We will make 
+      them calculate dynamically for the selected calendar date (defaulting to Today).
+      • Interactive Date Switcher: Add a quick date selector (< Yesterday | Today |   
+      Tomorrow > + Date picker) at the top so you can review your eating timeline and 
+      nutrition balance for any calendar day.                                         
+      • Timeline Correlation: The "How You've Eaten" timeline will display the meals  
+      logged on that specific day.                                                    
+      • Direct Calendar Shortcuts: Add a link to the Meal Planning Calendar in Quick  
+      Shortcuts.                                                                      
+      • Contextual Logging: Clicking "Log Meal" will carry the selected date over to  
+      the camera (/camera?date=...).                                                  
+  2. Magic Plate Camera (page.tsx):                                                   
+      • Date-Aware Logging: Reads the calendar date passed from HomePage or calendar  
+      (e.g. ?date=YYYY-MM-DD), allowing you to log a meal for today or backfill/plan  
+      for another date.                                                               
+      • Meal Type Selector: Currently hardcoded to "dinner". We will add an           
+      interactive selector for Breakfast, Lunch, Dinner, or Snack (auto-defaulting    
+      intelligently based on time of day).                                            
+      • Calendar Badge in Scanner: Shows a friendly pill in the viewfinder (e.g. "📅  
+      Logging for Today • 🥗 Lunch").                                                 
+      • Saves the meal with the exact calendar date timestamp.                        
+                                                                                      
+  ──────                                                                              
+  ### 📝 Files to Modify:                                                             
+                                                                                      
+  1. page.tsx                                                                         
+      • Add date selection state (selectedDate), filter meals and daily nutrition     
+      rings by date, and add the calendar date switcher and shortcuts.                
+  2. page.tsx                                                                         
+      • Add date-awareness from URL parameters, meal type selector, viewfinder date   
+      badge, and save meals with the selected date timestamp.                         
+                                                                                      
+    
+

@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, Suspense } from 'react';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Mascot } from '@/components/mascot/Mascot';
 import { fireConfetti } from '@/components/effects/Confetti';
 import { analyzeMeal, type MealAnalysisResult, type PlateArea, type PlateZone } from '@/lib/ai/meal-analyzer';
 import { DataLayer } from '@/lib/data-layer';
+import { formatDateKey } from '@/components/calendar/MealPlannerCalendar';
+import type { Meal } from '@/lib/mock-data';
 import {
   Camera as CameraIcon,
   RefreshCw,
@@ -19,7 +21,23 @@ import {
   Star,
   Flame,
   ArrowRight,
+  Calendar as CalendarIcon,
 } from 'lucide-react';
+
+export const MEAL_TYPES: { id: Meal['meal_type']; label: string; icon: string }[] = [
+  { id: 'breakfast', label: 'Breakfast', icon: '🍳' },
+  { id: 'lunch', label: 'Lunch', icon: '🥗' },
+  { id: 'dinner', label: 'Dinner', icon: '🍽️' },
+  { id: 'snack', label: 'Snack', icon: '🍎' },
+];
+
+export function getDefaultMealType(): Meal['meal_type'] {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 11) return 'breakfast';
+  if (hour >= 11 && hour < 16) return 'lunch';
+  if (hour >= 16 && hour < 18) return 'snack';
+  return 'dinner';
+}
 
 const SAMPLE_DISHES = [
   {
@@ -103,6 +121,44 @@ function mapPlateToEllipse(
   };
 }
 
+const FRACTIONS: { value: number; label: string }[] = [
+  { value: 1 / 4, label: '¼' },
+  { value: 1 / 3, label: '⅓' },
+  { value: 1 / 2, label: '½' },
+  { value: 2 / 3, label: '⅔' },
+  { value: 3 / 4, label: '¾' },
+];
+
+const CATEGORY_LABELS: Record<PlateZone['category'], string> = {
+  veggies: 'veggies 🥦',
+  protein: 'protein 🍗',
+  carbs: 'carbs 🍚',
+};
+
+// Turns target vs actual share of the plate into a simple fraction tip, e.g. "Eat ½ of the carbs 🍚".
+function portionAdvice(zone: PlateZone): string {
+  const { targetRatio, actualRatio } = zone;
+  if (!Number.isFinite(targetRatio) || !Number.isFinite(actualRatio) || actualRatio <= 0 || targetRatio <= 0) {
+    return zone.bubbleMessage;
+  }
+
+  const label = CATEGORY_LABELS[zone.category] ?? 'this part';
+  const ratio = targetRatio / actualRatio; // <1 = too much on the plate, >1 = too little
+
+  if (ratio >= 0.88 && ratio <= 1.12) return `Perfect portion ✓ ${label}`;
+
+  if (ratio < 1) {
+    const nearest = FRACTIONS.reduce((best, f) =>
+      Math.abs(f.value - ratio) < Math.abs(best.value - ratio) ? f : best
+    );
+    return `Eat ${nearest.label} of the ${label}`;
+  }
+
+  const extra = ratio - 1; // how much more, as a share of what is already there
+  if (extra >= 0.9) return `Double the ${label}`;
+  const quarters = Math.min(3, Math.max(1, Math.round(extra * 4)));
+  return `Add ${['', '¼', '½', '¾'][quarters]} more ${label}`;
+}
 // Returns the polygon in screen percentages plus its bubble anchor, or null if it is off-screen.
 function mapZoneToCoverFrame(
   zone: PlateZone,
@@ -129,8 +185,29 @@ function mapZoneToCoverFrame(
   };
 }
 
-export default function CameraPage() {
+function CameraContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const dateParam = searchParams.get('date');
+
+  const targetDate = useMemo(() => {
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const [y, m, d] = dateParam.split('-').map(Number);
+      const dObj = new Date(y, m - 1, d);
+      if (!isNaN(dObj.getTime())) return dObj;
+    }
+    return new Date();
+  }, [dateParam]);
+
+  const isToday = formatDateKey(targetDate) === formatDateKey(new Date());
+  const dateBadgeLabel = isToday
+    ? 'Today'
+    : targetDate.toLocaleDateString('default', {
+        month: 'short',
+        day: 'numeric',
+      });
+
+  const [mealType, setMealType] = useState<Meal['meal_type']>(getDefaultMealType);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -280,7 +357,7 @@ export default function CameraPage() {
   // Handle logging meal
   const handleLogMeal = async () => {
     if (!analysisResult) return;
-    
+
     setIsLogged(true); // Disable button immediately while uploading
 
     let finalImageUrl = selectedImage || SAMPLE_DISHES[0].url;
@@ -291,7 +368,7 @@ export default function CameraPage() {
         const response = await fetch(finalImageUrl);
         const blob = await response.blob();
         const ext = blob.type.split('/')[1] || 'jpg';
-        
+
         const uploadedUrl = await DataLayer.uploadMealImage(blob, ext);
         if (uploadedUrl) {
           finalImageUrl = uploadedUrl;
@@ -301,9 +378,15 @@ export default function CameraPage() {
       }
     }
 
+    const now = new Date();
+    const logDate = new Date(targetDate);
+    logDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+    const targetDateTimestamp = logDate.toISOString();
+    const timeLabel = logDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     await DataLayer.logMeal({
       title: analysisResult.dishName,
-      meal_type: 'dinner',
+      meal_type: mealType,
       image_url: finalImageUrl,
       portion_score: analysisResult.portionScore,
       calories: analysisResult.calories,
@@ -311,11 +394,13 @@ export default function CameraPage() {
       carbs_g: analysisResult.carbs_g,
       protein_g: analysisResult.protein_g,
       friendly_note: analysisResult.friendlyFeedback,
+      logged_at: targetDateTimestamp,
+      time_label: timeLabel,
     });
 
     fireConfetti();
     setTimeout(() => {
-      router.push('/');
+      router.push(`/?date=${formatDateKey(targetDate)}`);
     }, 1200);
   };
 
@@ -332,6 +417,30 @@ export default function CameraPage() {
         <p className="text-xs sm:text-sm text-stone-600 mt-1">
           Hold your plate in the guide or select a meal to see smart portion zones and speech bubbles!
         </p>
+      </div>
+
+      {/* Interactive Meal Type Selector */}
+      <div className="max-w-md mx-auto">
+        <div className="bg-white rounded-2xl border-2 border-stone-200/90 p-1.5 shadow-xs flex items-center justify-between gap-1">
+          {MEAL_TYPES.map((type) => {
+            const isSelected = mealType === type.id;
+            return (
+              <button
+                key={type.id}
+                type="button"
+                onClick={() => setMealType(type.id)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-1 sm:px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-emerald-500 text-white shadow-sm scale-[1.02]'
+                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+                }`}
+              >
+                <span>{type.icon}</span>
+                <span>{type.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Main Container: On Desktop, centered inside a phone-shaped frame */}
@@ -377,9 +486,8 @@ export default function CameraPage() {
 
               {/* Circular Plate Targeting Reticle */}
               <div
-                className={`absolute inset-x-6 top-16 bottom-28 border-4 border-dashed rounded-full pointer-events-none flex items-center justify-center transition-opacity ${
-                  analysisResult ? 'opacity-0' : 'border-white/50'
-                }`}
+                className={`absolute inset-x-6 top-16 bottom-28 border-4 border-dashed rounded-full pointer-events-none flex items-center justify-center transition-opacity ${analysisResult ? 'opacity-0' : 'border-white/50'
+                  }`}
               >
                 <span className="text-[11px] font-bold text-white/80 bg-stone-900/60 backdrop-blur-xs px-3 py-1 rounded-full uppercase tracking-wider">
                   Align Plate Here
@@ -463,7 +571,7 @@ export default function CameraPage() {
                           <div
                             className={`line-clamp-2 break-words text-center text-[11px] leading-tight font-black px-2.5 py-1 rounded-2xl shadow-lg border ${bubbleColors[zone.color]}`}
                           >
-                            {zone.bubbleMessage}
+                            {portionAdvice(zone)}
                           </div>
                         </div>
                       </React.Fragment>
@@ -478,6 +586,17 @@ export default function CameraPage() {
               <span className="text-xs font-bold bg-stone-900/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
                 {isCameraActive ? '🔴 Live Lens' : '📸 Plate Mockup'}
               </span>
+
+              {/* Viewfinder Date & Meal Badge */}
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-900/80 backdrop-blur-md border border-white/20 text-white text-[11px] font-bold shadow-md">
+                <CalendarIcon className="w-3 h-3 text-emerald-400" />
+                <span>{dateBadgeLabel}</span>
+                <span className="text-white/40">•</span>
+                <span>
+                  {MEAL_TYPES.find((t) => t.id === mealType)?.icon}{' '}
+                  {MEAL_TYPES.find((t) => t.id === mealType)?.label}
+                </span>
+              </div>
 
               <div className="flex items-center gap-2">
                 {isCameraActive ? (
@@ -537,9 +656,15 @@ export default function CameraPage() {
                           ⭐
                         </div>
                         <div>
-                          <h4 className="text-xs font-bold text-stone-900">
-                            {analysisResult.dishName}
-                          </h4>
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="text-xs font-bold text-stone-900">
+                              {analysisResult.dishName}
+                            </h4>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800">
+                              {MEAL_TYPES.find((t) => t.id === mealType)?.icon}{' '}
+                              {MEAL_TYPES.find((t) => t.id === mealType)?.label}
+                            </span>
+                          </div>
                           <span className="text-[11px] font-semibold text-emerald-700">
                             Portion Score: {analysisResult.portionScore} / 10
                           </span>
@@ -637,6 +762,7 @@ export default function CameraPage() {
                   onClick={() => {
                     stopCamera();
                     setSelectedImage(dish.url);
+                    setMealType(dish.type);
                     setAnalysisResult(null);
                     setAnalysisError(null);
                   }}
@@ -664,5 +790,20 @@ export default function CameraPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function CameraPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
+          <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin" />
+          <p className="text-sm font-semibold text-stone-500">Loading Magic Plate Vision...</p>
+        </div>
+      }
+    >
+      <CameraContent />
+    </Suspense>
   );
 }
