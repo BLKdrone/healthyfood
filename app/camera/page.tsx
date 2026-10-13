@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Mascot } from '@/components/mascot/Mascot';
 import { fireConfetti } from '@/components/effects/Confetti';
-import { analyzeMeal, type MealAnalysisResult } from '@/lib/ai/meal-analyzer';
+import { analyzeMeal, type MealAnalysisResult, type PlateArea, type PlateZone } from '@/lib/ai/meal-analyzer';
 import { DataLayer } from '@/lib/data-layer';
 import {
   Camera as CameraIcon,
@@ -41,32 +41,91 @@ const SAMPLE_DISHES = [
 
 const SCANNER_ASPECT_RATIO = 9 / 16;
 
-function mapBoxToCoverFrame(
-  box: { top: number; left: number; width: number; height: number },
-  sourceAspectRatio: number | null
-) {
+type Point = { x: number; y: number };
+
+// Map a point (percent of the full image) into the cropped "object-cover" frame.
+function mapPointToCoverFrame(point: Point, sourceAspectRatio: number | null): Point {
   const imageAspectRatio = sourceAspectRatio ?? SCANNER_ASPECT_RATIO;
   const visibleWidth = Math.min(1, SCANNER_ASPECT_RATIO / imageAspectRatio);
   const visibleHeight = Math.min(1, imageAspectRatio / SCANNER_ASPECT_RATIO);
   const cropLeft = (1 - visibleWidth) / 2;
   const cropTop = (1 - visibleHeight) / 2;
+  return {
+    x: ((point.x / 100 - cropLeft) / visibleWidth) * 100,
+    y: ((point.y / 100 - cropTop) / visibleHeight) * 100,
+  };
+}
 
-  const left = (box.left / 100 - cropLeft) / visibleWidth;
-  const top = (box.top / 100 - cropTop) / visibleHeight;
-  const right = (box.left + box.width) / 100;
-  const bottom = (box.top + box.height) / 100;
-  const clippedLeft = Math.max(0, left);
-  const clippedTop = Math.max(0, top);
-  const clippedRight = Math.min(1, (right - cropLeft) / visibleWidth);
-  const clippedBottom = Math.min(1, (bottom - cropTop) / visibleHeight);
+// Used when the AI does not return a polygon: a box with its corners cut off (octagon).
+function boxToPolygon(box: { top: number; left: number; width: number; height: number }): Point[] {
+  const cut = Math.min(box.width, box.height) * 0.25;
+  const l = box.left;
+  const t = box.top;
+  const r = box.left + box.width;
+  const b = box.top + box.height;
+  return [
+    { x: l + cut, y: t },
+    { x: r - cut, y: t },
+    { x: r, y: t + cut },
+    { x: r, y: b - cut },
+    { x: r - cut, y: b },
+    { x: l + cut, y: b },
+    { x: l, y: b - cut },
+    { x: l, y: t + cut },
+  ];
+}
 
-  if (clippedRight <= clippedLeft || clippedBottom <= clippedTop) return null;
+function isValidPolygon(polygon: unknown): polygon is Point[] {
+  return (
+    Array.isArray(polygon) &&
+    polygon.length >= 3 &&
+    polygon.every((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+  );
+}
+
+// Bowl/plate as an ellipse in screen percentages (slightly inset so outlines stay visible at the rim).
+function mapPlateToEllipse(
+  plate: PlateArea | undefined,
+  sourceAspectRatio: number | null
+): { cx: number; cy: number; rx: number; ry: number } | null {
+  if (!plate) return null;
+  const a = mapPointToCoverFrame({ x: plate.left, y: plate.top }, sourceAspectRatio);
+  const b = mapPointToCoverFrame(
+    { x: plate.left + plate.width, y: plate.top + plate.height },
+    sourceAspectRatio
+  );
+  const inset = 0.94;
+  return {
+    cx: (a.x + b.x) / 2,
+    cy: (a.y + b.y) / 2,
+    rx: (Math.abs(b.x - a.x) / 2) * inset,
+    ry: (Math.abs(b.y - a.y) / 2) * inset,
+  };
+}
+
+// Returns the polygon in screen percentages plus its bubble anchor, or null if it is off-screen.
+function mapZoneToCoverFrame(
+  zone: PlateZone,
+  sourceAspectRatio: number | null
+): { points: Point[]; anchorX: number; anchorY: number } | null {
+  const source = isValidPolygon(zone.polygon) ? zone.polygon : boxToPolygon(zone.boxCoords);
+  const mapped = source.map((p) => mapPointToCoverFrame(p, sourceAspectRatio));
+
+  const xs = mapped.map((p) => p.x);
+  const ys = mapped.map((p) => p.y);
+  if (Math.max(...xs) <= 0 || Math.min(...xs) >= 100 || Math.max(...ys) <= 0 || Math.min(...ys) >= 100) {
+    return null;
+  }
+
+  const clamp = (n: number) => Math.min(100, Math.max(0, n));
+  const points = mapped.map((p) => ({ x: clamp(p.x), y: clamp(p.y) }));
+  const clampedXs = points.map((p) => p.x);
+  const clampedYs = points.map((p) => p.y);
 
   return {
-    top: clippedTop * 100,
-    left: clippedLeft * 100,
-    width: (clippedRight - clippedLeft) * 100,
-    height: (clippedBottom - clippedTop) * 100,
+    points,
+    anchorX: (Math.min(...clampedXs) + Math.max(...clampedXs)) / 2,
+    anchorY: Math.min(...clampedYs),
   };
 }
 
@@ -317,7 +376,11 @@ export default function CameraPage() {
               <div className="absolute inset-0 bg-stone-950/20 pointer-events-none" />
 
               {/* Circular Plate Targeting Reticle */}
-              <div className="absolute inset-x-6 top-16 bottom-28 border-4 border-dashed border-white/50 rounded-full pointer-events-none flex items-center justify-center">
+              <div
+                className={`absolute inset-x-6 top-16 bottom-28 border-4 border-dashed rounded-full pointer-events-none flex items-center justify-center transition-opacity ${
+                  analysisResult ? 'opacity-0' : 'border-white/50'
+                }`}
+              >
                 <span className="text-[11px] font-bold text-white/80 bg-stone-900/60 backdrop-blur-xs px-3 py-1 rounded-full uppercase tracking-wider">
                   Align Plate Here
                 </span>
@@ -326,47 +389,86 @@ export default function CameraPage() {
               {/* OVERLAY: Colored Dotted Zones & Floating Speech Bubbles when Analyzed */}
               {analysisResult && (
                 <div className="absolute inset-0 pointer-events-none z-20">
-                  {analysisResult.zones.map((zone) => {
-                    const displayBox = mapBoxToCoverFrame(
-                      zone.boxCoords,
-                      analysisImageAspectRatio
-                    );
-                    if (!displayBox) return null;
+                  {(() => {
+                    const plateEllipse = mapPlateToEllipse(analysisResult.plate, analysisImageAspectRatio);
+                    const shapes = analysisResult.zones.flatMap((zone) => {
+                      const shape = mapZoneToCoverFrame(zone, analysisImageAspectRatio);
+                      return shape ? [{ zone, shape }] : [];
+                    });
 
-                    const borderColors = {
-                      mint: 'border-emerald-400 bg-emerald-500/15 text-emerald-950',
-                      peach: 'border-orange-400 bg-orange-500/15 text-orange-950',
-                      butter: 'border-amber-300 bg-amber-400/20 text-amber-950',
+                    // Place each bubble at its polygon's top; push it down if it would sit on a previous bubble.
+                    const placed: { x: number; y: number }[] = [];
+                    const bubbles = shapes.map(({ shape }) => {
+                      let x = Math.min(74, Math.max(26, shape.anchorX));
+                      let y = Math.max(shape.anchorY, 14);
+                      if (plateEllipse) {
+                        // keep the bubble over the bowl, not the table
+                        x = Math.min(plateEllipse.cx + plateEllipse.rx * 0.5, Math.max(plateEllipse.cx - plateEllipse.rx * 0.5, x));
+                        y = Math.min(plateEllipse.cy + plateEllipse.ry * 0.6, Math.max(plateEllipse.cy - plateEllipse.ry * 0.6, y));
+                      }
+                      while (placed.some((q) => Math.abs(q.x - x) < 50 && Math.abs(q.y - y) < 11) && y < 80) {
+                        y += 11;
+                      }
+                      placed.push({ x, y });
+                      return { x, y };
+                    });
+
+                    const shapeColors = {
+                      mint: 'stroke-emerald-400 fill-emerald-500/10',
+                      peach: 'stroke-orange-400 fill-orange-500/10',
+                      butter: 'stroke-amber-300 fill-amber-400/10',
                     };
-
                     const bubbleColors = {
                       mint: 'bg-emerald-500 text-white border-emerald-300',
                       peach: 'bg-orange-500 text-white border-orange-300',
                       butter: 'bg-amber-400 text-amber-950 border-amber-300',
                     };
 
-                    return (
-                      <div
-                        key={zone.id}
-                        className={`absolute border-2 border-dashed rounded-3xl animate-dash-pulse ${borderColors[zone.color]
-                          } transition-all`}
-                        style={{
-                          top: `${displayBox.top}%`,
-                          left: `${displayBox.left}%`,
-                          width: `${displayBox.width}%`,
-                          height: `${displayBox.height}%`,
-                        }}
-                      >
-                        {/* Speech Bubble Floating Above / Inside Zone */}
-                        <div
-                          className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-black px-2.5 py-1 rounded-full shadow-lg border ${bubbleColors[zone.color]
-                            } animate-bounce`}
+                    return shapes.map(({ zone, shape }, i) => (
+                      <React.Fragment key={zone.id}>
+                        {/* Angled polygon outline that follows the food */}
+                        <svg
+                          className="absolute inset-0 h-full w-full"
+                          viewBox="0 0 100 100"
+                          preserveAspectRatio="none"
+                          aria-hidden="true"
                         >
-                          {zone.bubbleMessage}
+                          {plateEllipse && (
+                            <defs>
+                              <clipPath id={`bowl-clip-${i}`}>
+                                <ellipse
+                                  cx={plateEllipse.cx}
+                                  cy={plateEllipse.cy}
+                                  rx={plateEllipse.rx}
+                                  ry={plateEllipse.ry}
+                                />
+                              </clipPath>
+                            </defs>
+                          )}
+                          <g clipPath={plateEllipse ? `url(#bowl-clip-${i})` : undefined}>
+                            <polygon
+                              points={shape.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                              strokeLinejoin="round"
+                              vectorEffect="non-scaling-stroke"
+                              className={`stroke-2 animate-dash-pulse ${shapeColors[zone.color]}`}
+                            />
+                          </g>
+                        </svg>
+
+                        {/* Short speech bubble: wraps, never wider than the screen */}
+                        <div
+                          className="absolute w-max max-w-[58%] -translate-x-1/2 -translate-y-full"
+                          style={{ left: `${bubbles[i].x}%`, top: `${bubbles[i].y}%` }}
+                        >
+                          <div
+                            className={`line-clamp-2 break-words text-center text-[11px] leading-tight font-black px-2.5 py-1 rounded-2xl shadow-lg border ${bubbleColors[zone.color]}`}
+                          >
+                            {zone.bubbleMessage}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      </React.Fragment>
+                    ));
+                  })()}
                 </div>
               )}
             </div>

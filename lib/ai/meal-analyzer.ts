@@ -17,9 +17,20 @@ export interface PlateZone {
     width: number;
     height: number;
   };
+  // Outline of the food region as 5-8 points (percent of the full image, 0-100).
+  polygon: { x: number; y: number }[];
+}
+
+// Bounding box of the bowl/plate itself, in percent of the full image (0-100).
+export interface PlateArea {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
 }
 
 export interface MealAnalysisResult {
+  plate?: PlateArea;
   dishName: string;
   portionScore: number;
   calories: number;
@@ -40,6 +51,19 @@ const responseSchema: Schema = {
     sodium_mg: { type: Type.NUMBER },
     carbs_g: { type: Type.NUMBER },
     protein_g: { type: Type.NUMBER },
+    plate: {
+      type: Type.OBJECT,
+      description:
+        'Bounding box of the whole bowl or plate that holds the food (its outer rim), on a 0-1000 scale relative to the full input image: 0 is the top/left edge, 1000 the bottom/right edge.',
+      properties: {
+        ymin: { type: Type.NUMBER, minimum: 0, maximum: 1000 },
+        xmin: { type: Type.NUMBER, minimum: 0, maximum: 1000 },
+        ymax: { type: Type.NUMBER, minimum: 0, maximum: 1000 },
+        xmax: { type: Type.NUMBER, minimum: 0, maximum: 1000 },
+      },
+      propertyOrdering: ['ymin', 'xmin', 'ymax', 'xmax'],
+      required: ['ymin', 'xmin', 'ymax', 'xmax'],
+    },
     zones: {
       type: Type.ARRAY,
       items: {
@@ -58,36 +82,25 @@ const responseSchema: Schema = {
             enum: ['optimal', 'increase', 'decrease'],
           },
           color: { type: Type.STRING, enum: ['mint', 'peach', 'butter'] },
-          bubbleMessage: { type: Type.STRING },
-          boxCoords: {
-            type: Type.OBJECT,
-            properties: {
-              top: {
-                type: Type.NUMBER,
-                description: 'Percent from the top edge of the full input image, 0-100',
-                minimum: 0,
-                maximum: 100,
+          bubbleMessage: {
+            type: Type.STRING,
+            description: 'Very short speech-bubble tip, max 28 characters, with one emoji. Example: "Eat more veggies 🥦"',
+          },
+          polygon: {
+            type: Type.ARRAY,
+            description:
+              'Tight outline of ONLY this food region (not the plate, bowl or background), 6 to 10 points in clockwise order, hugging the real edge of the food with angled corners. Each point is {y, x} on a 0-1000 scale relative to the full input image: y=0 is the top edge, y=1000 the bottom edge, x=0 the left edge, x=1000 the right edge.',
+            minItems: '6',
+            maxItems: '10',
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                y: { type: Type.NUMBER, description: 'Vertical position, 0 (top) to 1000 (bottom)', minimum: 0, maximum: 1000 },
+                x: { type: Type.NUMBER, description: 'Horizontal position, 0 (left) to 1000 (right)', minimum: 0, maximum: 1000 },
               },
-              left: {
-                type: Type.NUMBER,
-                description: 'Percent from the left edge of the full input image, 0-100',
-                minimum: 0,
-                maximum: 100,
-              },
-              width: {
-                type: Type.NUMBER,
-                description: 'Bounding-box width as a percent of the full input image, 0-100',
-                minimum: 0,
-                maximum: 100,
-              },
-              height: {
-                type: Type.NUMBER,
-                description: 'Bounding-box height as a percent of the full input image, 0-100',
-                minimum: 0,
-                maximum: 100,
-              },
+              propertyOrdering: ['y', 'x'],
+              required: ['y', 'x'],
             },
-            required: ['top', 'left', 'width', 'height'],
           },
         },
         required: [
@@ -99,7 +112,7 @@ const responseSchema: Schema = {
           'status',
           'color',
           'bubbleMessage',
-          'boxCoords',
+          'polygon',
         ],
       },
     },
@@ -111,6 +124,7 @@ const responseSchema: Schema = {
   },
   required: [
     'dishName',
+    'plate',
     'portionScore',
     'calories',
     'sodium_mg',
@@ -162,7 +176,7 @@ export async function analyzeMeal(
                 },
               },
               {
-                text: 'Analyze the food visible in this meal image and return valid JSON matching the schema. Estimate calories, macros, and sodium. Return at least one zone for the visible food; include a separate zone for each visible vegetable, protein, or carbohydrate region. Never return an empty zones array. For every boxCoords value, use a percentage from 0 to 100 relative to the full input image, not the plate or screen. The origin is the image top-left; top and left locate the box top-left, while width and height are its size. Keep each box within the image boundaries. Give a portion score from 0 to 10 and friendly feedback.',
+                text: 'Analyze the food visible in this meal image and return valid JSON matching the schema. Estimate calories, macros, and sodium. Return at least one zone for the visible food; include a separate zone for each visible vegetable, protein, or carbohydrate region. Never return an empty zones array. First return plate: the bounding box of the whole bowl or plate (its outer rim) as ymin, xmin, ymax, xmax on a 0-1000 scale. For each zone, return a polygon of 6 to 10 {y, x} points on a 0-1000 scale (y=0 top, y=1000 bottom, x=0 left, x=1000 right, relative to the full input image) that tightly traces only that food, staying on the food and strictly inside the plate or bowl rim, never on the table or background. Use angled corners, not a plain rectangle, and do not let different zones overlap much. Keep each bubbleMessage under 28 characters. Give a portion score from 0 to 10 and friendly feedback.',
               },
             ],
           },
@@ -183,11 +197,49 @@ export async function analyzeMeal(
     // Gemini sometimes wraps JSON in markdown blocks even with responseMimeType set
     responseText = responseText.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
 
-    const result = JSON.parse(responseText) as MealAnalysisResult;
-    if (!Array.isArray(result.zones) || result.zones.length === 0) {
+    const raw = JSON.parse(responseText) as Omit<MealAnalysisResult, 'zones' | 'plate'> & {
+      plate?: { ymin: number; xmin: number; ymax: number; xmax: number };
+      zones: Array<Omit<PlateZone, 'boxCoords' | 'polygon'> & { polygon?: { x: number; y: number }[] }>;
+    };
+
+    const clamp = (n: number) => Math.min(100, Math.max(0, n));
+    const zones: PlateZone[] = (Array.isArray(raw.zones) ? raw.zones : []).flatMap((zone) => {
+      // Gemini returns 0-1000 coordinates; convert to percent of the full image.
+      const polygon = (zone.polygon ?? [])
+        .filter((pt) => Number.isFinite(pt?.x) && Number.isFinite(pt?.y))
+        .map((pt) => ({ x: clamp(pt.x / 10), y: clamp(pt.y / 10) }));
+      if (polygon.length < 3) return [];
+
+      const xs = polygon.map((pt) => pt.x);
+      const ys = polygon.map((pt) => pt.y);
+      const left = Math.min(...xs);
+      const top = Math.min(...ys);
+      return [
+        {
+          ...zone,
+          polygon,
+          boxCoords: { top, left, width: Math.max(...xs) - left, height: Math.max(...ys) - top },
+        },
+      ];
+    });
+
+    if (zones.length === 0) {
       throw new Error('Gemini returned no plate zones. Please try another meal image.');
     }
-    return result;
+
+    let plate: PlateArea | undefined;
+    const pl = raw.plate;
+    if (pl && [pl.ymin, pl.xmin, pl.ymax, pl.xmax].every(Number.isFinite)) {
+      const top = clamp(Math.min(pl.ymin, pl.ymax) / 10);
+      const left = clamp(Math.min(pl.xmin, pl.xmax) / 10);
+      const bottom = clamp(Math.max(pl.ymin, pl.ymax) / 10);
+      const right = clamp(Math.max(pl.xmin, pl.xmax) / 10);
+      if (bottom - top > 5 && right - left > 5) {
+        plate = { top, left, width: right - left, height: bottom - top };
+      }
+    }
+
+    return { ...raw, plate, zones };
   } catch (error: unknown) {
     // Avoid logging the whole error object because it may contain the image payload.
     const message = error instanceof Error ? error.message.slice(0, 300) : 'Unknown error occurred.';
