@@ -122,7 +122,15 @@ export const INITIAL_GOALS: Goal[] = [
   },
 ];
 
+function getRelativeISO(daysOffset: number, hours: number, minutes: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysOffset);
+  d.setHours(hours, minutes, 0, 0);
+  return d.toISOString();
+}
+
 export const INITIAL_MEALS: Meal[] = [
+  // Today's earlier meals
   {
     id: 'm-1',
     title: 'Avocado Toast & Poached Egg Bowl',
@@ -134,7 +142,7 @@ export const INITIAL_MEALS: Meal[] = [
     carbs_g: 38,
     protein_g: 18,
     friendly_note: 'Terrific portioning! Healthy monounsaturated fats paired with whole sourdough.',
-    logged_at: '2026-09-30T08:15:00Z',
+    logged_at: getRelativeISO(0, 8, 15),
     time_label: '8:15 AM',
   },
   {
@@ -148,7 +156,7 @@ export const INITIAL_MEALS: Meal[] = [
     carbs_g: 62,
     protein_g: 38,
     friendly_note: 'Great 50% vegetable ratio! Sodium was well within our midday budget.',
-    logged_at: '2026-09-30T12:45:00Z',
+    logged_at: getRelativeISO(0, 12, 45),
     time_label: '12:45 PM',
   },
   {
@@ -162,8 +170,82 @@ export const INITIAL_MEALS: Meal[] = [
     carbs_g: 18,
     protein_g: 14,
     friendly_note: 'Smart low-sodium pick! Antioxidants and protein keep hunger calm.',
-    logged_at: '2026-09-30T15:40:00Z',
+    logged_at: getRelativeISO(0, 15, 40),
     time_label: '3:40 PM',
+  },
+
+  // Yesterday's meals
+  {
+    id: 'm-y1',
+    title: 'Overnight Rolled Oats with Chia & Berries',
+    meal_type: 'breakfast',
+    image_url: 'https://images.unsplash.com/photo-1584776296944-ab6fb57b0bdd?w=500&auto=format&fit=crop&q=80',
+    portion_score: 9.7,
+    calories: 360,
+    sodium_mg: 90,
+    carbs_g: 52,
+    protein_g: 16,
+    friendly_note: 'High fiber start that stabilized glucose and supported gut health.',
+    logged_at: getRelativeISO(-1, 8, 0),
+    time_label: '8:00 AM',
+  },
+  {
+    id: 'm-y2',
+    title: 'Warm Quinoa, Roasted Veggie & Tahini Bowl',
+    meal_type: 'lunch',
+    image_url: 'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?w=500&auto=format&fit=crop&q=80',
+    portion_score: 9.3,
+    calories: 540,
+    sodium_mg: 410,
+    carbs_g: 65,
+    protein_g: 22,
+    friendly_note: 'Balanced plant protein and vibrant roasted veggies.',
+    logged_at: getRelativeISO(-1, 12, 30),
+    time_label: '12:30 PM',
+  },
+  {
+    id: 'm-y3',
+    title: 'Steamed Lemon Cod with Roasted Zucchini',
+    meal_type: 'dinner',
+    image_url: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=500&auto=format&fit=crop&q=80',
+    portion_score: 9.9,
+    calories: 440,
+    sodium_mg: 210,
+    carbs_g: 24,
+    protein_g: 36,
+    friendly_note: 'Doctor Rx low-sodium triumph! Well within daily parameters.',
+    logged_at: getRelativeISO(-1, 19, 0),
+    time_label: '7:00 PM',
+  },
+
+  // 2 days ago
+  {
+    id: 'm-2d1',
+    title: 'Spinach & Mushroom Egg White Scramble',
+    meal_type: 'breakfast',
+    image_url: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=500&auto=format&fit=crop&q=80',
+    portion_score: 9.5,
+    calories: 320,
+    sodium_mg: 280,
+    carbs_g: 18,
+    protein_g: 28,
+    friendly_note: 'Lean protein powerhouse to fuel active morning.',
+    logged_at: getRelativeISO(-2, 8, 30),
+    time_label: '8:30 AM',
+  },
+  {
+    id: 'm-2d2',
+    title: 'Grilled Salmon with Mixed Leaf Garden Salad',
+    meal_type: 'lunch',
+    image_url: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=500&auto=format&fit=crop&q=80',
+    portion_score: 9.4,
+    calories: 590,
+    sodium_mg: 460,
+    carbs_g: 22,
+    protein_g: 44,
+    friendly_note: 'Terrific omega-3 rich lunch with crisp greens.',
+    logged_at: getRelativeISO(-2, 13, 0),
+    time_label: '1:00 PM',
   },
 ];
 

@@ -170,12 +170,22 @@ export const DataLayer = {
     return getStored<Meal[]>(STORAGE_KEYS.MEALS, INITIAL_MEALS);
   },
 
-  async logMeal(meal: Omit<Meal, 'id' | 'logged_at' | 'time_label'>): Promise<Meal> {
+  async logMeal(
+    meal: Omit<Meal, 'id' | 'logged_at' | 'time_label'> & {
+      logged_at?: string;
+      time_label?: string;
+    }
+  ): Promise<Meal> {
+    const timestamp = meal.logged_at || new Date().toISOString();
+    const timeLabel =
+      meal.time_label ||
+      new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     const newMeal: Meal = {
       ...meal,
       id: `m-${Date.now()}`,
-      logged_at: new Date().toISOString(),
-      time_label: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      logged_at: timestamp,
+      time_label: timeLabel,
     };
 
     if (this.isLive()) {
@@ -196,6 +206,7 @@ export const DataLayer = {
               carbs_g: newMeal.carbs_g,
               protein_g: newMeal.protein_g,
               friendly_note: newMeal.friendly_note,
+              logged_at: newMeal.logged_at,
             })
             .select()
             .single();
@@ -210,6 +221,22 @@ export const DataLayer = {
     const updatedMeals = [newMeal, ...currentMeals];
     setStored(STORAGE_KEYS.MEALS, updatedMeals);
     return newMeal;
+  },
+
+  filterMealsByDate(meals: Meal[], targetDate: Date): Meal[] {
+    const y = targetDate.getFullYear();
+    const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const d = String(targetDate.getDate()).padStart(2, '0');
+    const targetKey = `${y}-${m}-${d}`;
+
+    return meals.filter((meal) => {
+      const mealDate = new Date(meal.logged_at);
+      if (isNaN(mealDate.getTime())) return false;
+      const my = mealDate.getFullYear();
+      const mm = String(mealDate.getMonth() + 1).padStart(2, '0');
+      const md = String(mealDate.getDate()).padStart(2, '0');
+      return `${my}-${mm}-${md}` === targetKey;
+    });
   },
 
   async uploadMealImage(fileBlob: Blob, fileExt: string): Promise<string | null> {

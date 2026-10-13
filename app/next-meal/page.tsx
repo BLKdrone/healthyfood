@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
@@ -8,6 +8,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Mascot } from '@/components/mascot/Mascot';
 import { ResponsiveSheet } from '@/components/ui/ResponsiveSheet';
 import { fireConfetti } from '@/components/effects/Confetti';
+import { MealPlannerCalendar, formatDateKey } from '@/components/calendar/MealPlannerCalendar';
 import { DataLayer } from '@/lib/data-layer';
 import type { NextMealOption, Meal } from '@/lib/mock-data';
 import {
@@ -19,6 +20,7 @@ import {
   ArrowRight,
   TrendingDown,
   Info,
+  Calendar,
 } from 'lucide-react';
 
 export default function NextMealPage() {
@@ -27,6 +29,7 @@ export default function NextMealPage() {
   const [selectedId, setSelectedId] = useState<string>('opt-low-sodium');
   const [isChosenModalOpen, setIsChosenModalOpen] = useState<boolean>(false);
   const [meals, setMeals] = useState<Meal[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   useEffect(() => {
     async function load() {
@@ -48,11 +51,26 @@ export default function NextMealPage() {
     protein: 90,
   };
 
-  // Consumed before dinner
-  const consumedCalories = meals.reduce((sum, m) => sum + m.calories, 0);
-  const consumedSodium = meals.reduce((sum, m) => sum + m.sodium_mg, 0);
-  const consumedCarbs = meals.reduce((sum, m) => sum + m.carbs_g, 0);
-  const consumedProtein = meals.reduce((sum, m) => sum + m.protein_g, 0);
+  // Filter meals for the selected date
+  const dayMeals = useMemo(
+    () => DataLayer.filterMealsByDate(meals, selectedDate),
+    [meals, selectedDate]
+  );
+
+  const isToday = formatDateKey(selectedDate) === formatDateKey(new Date());
+  const dateLabel = isToday
+    ? 'Today'
+    : selectedDate.toLocaleDateString('default', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+
+  // Consumed before dinner for the chosen date
+  const consumedCalories = dayMeals.reduce((sum, m) => sum + m.calories, 0);
+  const consumedSodium = dayMeals.reduce((sum, m) => sum + m.sodium_mg, 0);
+  const consumedCarbs = dayMeals.reduce((sum, m) => sum + m.carbs_g, 0);
+  const consumedProtein = dayMeals.reduce((sum, m) => sum + m.protein_g, 0);
 
   // Baseline remaining before this meal
   const baselineRemaining = {
@@ -73,7 +91,10 @@ export default function NextMealPage() {
   const handleChooseMeal = async () => {
     if (!selectedOption) return;
 
-    await DataLayer.logMeal({
+    const mealDate = new Date(selectedDate);
+    mealDate.setHours(19, 0, 0, 0);
+
+    const newLogged = await DataLayer.logMeal({
       title: selectedOption.title,
       meal_type: 'dinner',
       image_url: selectedOption.image_url,
@@ -82,9 +103,12 @@ export default function NextMealPage() {
       sodium_mg: selectedOption.sodium_mg,
       carbs_g: selectedOption.carbs_g,
       protein_g: selectedOption.protein_g,
-      friendly_note: `Prescribed meal chosen: ${selectedOption.tag}. Perfect balance!`,
+      friendly_note: `Prescribed meal chosen: ${selectedOption.tag} for ${dateLabel}. Perfect balance!`,
+      logged_at: mealDate.toISOString(),
+      time_label: '7:00 PM',
     });
 
+    setMeals((prev) => [newLogged, ...prev]);
     setIsChosenModalOpen(true);
     fireConfetti();
   };
@@ -105,17 +129,59 @@ export default function NextMealPage() {
           Next Meal Recommendation
         </h1>
         <p className="text-xs sm:text-sm text-stone-600 mt-1">
-          Based on your earlier meals today, here are 3 optimized options that safeguard your doctor&apos;s
-          sodium limit and smooth out your nighttime blood sugar.
+          Based on your meals for <span className="font-bold text-stone-800">{dateLabel}</span>, here are 3 optimized options that safeguard your doctor&apos;s
+          sodium limit and smooth out your blood sugar.
         </p>
       </div>
+
+      {/* Meal Planning Calendar */}
+      <MealPlannerCalendar
+        selectedDate={selectedDate}
+        onSelectDate={setSelectedDate}
+        meals={meals}
+      />
+
+      {/* Earlier meals on selected date banner */}
+      {dayMeals.length > 0 ? (
+        <div className="bg-emerald-50/70 rounded-2xl border border-emerald-200/80 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <span className="font-extrabold text-emerald-900 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              Logged on {dateLabel}:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {dayMeals.map((m) => (
+                <span
+                  key={m.id}
+                  className="bg-white border border-emerald-200/90 text-stone-800 font-semibold px-2.5 py-1 rounded-xl shadow-2xs"
+                >
+                  <span className="text-[10px] uppercase font-bold text-emerald-700 mr-1">
+                    {m.meal_type}
+                  </span>
+                  {m.title} ({m.calories} kcal)
+                </span>
+              ))}
+            </div>
+          </div>
+          <span className="text-emerald-800 font-bold whitespace-nowrap bg-white/80 px-2.5 py-1 rounded-lg border border-emerald-200">
+            {consumedCalories} kcal consumed
+          </span>
+        </div>
+      ) : (
+        <div className="bg-stone-50 rounded-2xl border border-stone-200/80 p-3.5 flex items-center gap-2.5 text-xs text-stone-600">
+          <Info className="w-4 h-4 text-stone-400 shrink-0" />
+          <span>
+            No earlier meals logged for <strong className="text-stone-800">{dateLabel}</strong>. Showing dinner options with full daily allowances!
+          </span>
+        </div>
+      )}
 
       {/* Dynamic Section: "Your Remaining Needs" Live Dynamic Bars */}
       <Card variant="white" className="p-5 sm:p-6 border-2 border-stone-200/90 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-stone-100">
           <div>
             <h2 className="text-base sm:text-lg font-black text-stone-900 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-600" /> Your Remaining Daily Allowances
+              <Sparkles className="w-4 h-4 text-emerald-600" /> Remaining Allowances for {dateLabel}
             </h2>
             <p className="text-xs text-stone-500">
               Select any of the 3 meal options below to preview real-time impact on your daily targets!
@@ -346,7 +412,7 @@ export default function NextMealPage() {
                 onClick={handleChooseMeal}
                 className="w-full lg:w-auto px-6 py-3.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm sm:text-base shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                Choose This Meal <ArrowRight className="w-4 h-4" />
+                Choose This Meal for {dateLabel} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -357,7 +423,7 @@ export default function NextMealPage() {
       <ResponsiveSheet
         isOpen={isChosenModalOpen}
         onClose={() => setIsChosenModalOpen(false)}
-        title="Meal Added to Plan!"
+        title={`Meal Scheduled for ${dateLabel}!`}
       >
         <div className="text-center py-2 space-y-4">
           <div className="w-20 h-20 mx-auto rounded-3xl bg-emerald-50 border-2 border-emerald-200 flex items-center justify-center">
@@ -366,18 +432,24 @@ export default function NextMealPage() {
 
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100/80 px-3 py-1 rounded-full border border-emerald-200">
-              Dinner Locked In
+              Dinner Locked In • {dateLabel}
             </span>
             <h3 className="text-xl font-black text-stone-900 mt-2">
               {selectedOption?.title}
             </h3>
             <p className="text-xs sm:text-sm text-stone-600 max-w-sm mx-auto mt-1">
-              Your meal has been logged and your daily balance updated. You kept sodium well under
-              your doctor&apos;s cap today!
+              Your meal has been planned and saved for <strong className="text-stone-800">{dateLabel}</strong>. Your daily doctor sodium and calorie allowances have been updated!
             </p>
           </div>
 
-          <div className="pt-2 flex gap-3">
+          <div className="pt-2 flex flex-col sm:flex-row gap-3">
+            <button
+              type="button"
+              onClick={() => setIsChosenModalOpen(false)}
+              className="flex-1 py-3 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold text-sm transition-colors cursor-pointer"
+            >
+              Keep Planning Dates
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -386,7 +458,7 @@ export default function NextMealPage() {
               }}
               className="flex-1 py-3 rounded-full bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 transition-colors shadow-md cursor-pointer"
             >
-              View Updated Dashboard
+              View Dashboard
             </button>
           </div>
         </div>
