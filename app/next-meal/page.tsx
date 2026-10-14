@@ -454,7 +454,7 @@ export default function NextMealPage() {
               type="button"
               onClick={() => {
                 setIsChosenModalOpen(false);
-                router.push('/');
+                router.push('/?celebrate=true');
               }}
               className="flex-1 py-3 rounded-full bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 transition-colors shadow-md cursor-pointer"
             >

@@ -220,29 +220,66 @@ function CameraContent() {
   const [analysisImageAspectRatio, setAnalysisImageAspectRatio] = useState<number | null>(null);
   const [isLogged, setIsLogged] = useState<boolean>(false);
 
+  // Connect stream to video element whenever stream and isCameraActive change
+  useEffect(() => {
+    const video = videoRef.current;
+    if (isCameraActive && video && stream) {
+      if (video.srcObject !== stream) {
+        video.srcObject = stream;
+      }
+      video.play().catch((err) => {
+        console.warn('Video auto-play was prevented:', err);
+      });
+    }
+  }, [stream, isCameraActive]);
+
   // Initialize camera
   const startCamera = useCallback(async () => {
     setCameraError(null);
     setAnalysisError(null);
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera API is not supported in this browser.');
+      if (typeof window !== 'undefined' && (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)) {
+        if (!window.isSecureContext) {
+          throw new Error(
+            'Camera access requires a secure connection (HTTPS or http://localhost). Browsers block camera access over plain HTTP on local network IPs.'
+          );
+        }
+        throw new Error('Camera API is not supported or is blocked in this browser.');
       }
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false,
-      });
+
+      let mediaStream: MediaStream;
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+      } catch {
+        // Fallback for laptops/webcams where facingMode constraint causes rejection
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
       setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
       setIsCameraActive(true);
       setSelectedImage(null);
     } catch (err: unknown) {
-      const errorMsg =
-        err instanceof Error
-          ? err.message
-          : 'Could not access camera. Please allow camera permissions or use the upload fallback below.';
+      console.error('Camera initialization error:', err);
+      let errorMsg = 'Could not access camera. Please allow camera permissions or use the upload fallback below.';
+      if (err instanceof DOMException) {
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          errorMsg = 'Camera permission was denied. Please allow camera access in your browser address bar settings.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          errorMsg = 'No camera device found on this system.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          errorMsg = 'Camera is already in use by another application or tab.';
+        } else if (err.message) {
+          errorMsg = err.message;
+        }
+      } else if (err instanceof Error) {
+        errorMsg = err.message;
+      }
       setCameraError(errorMsg);
       setIsCameraActive(false);
     }
@@ -252,6 +289,9 @@ function CameraContent() {
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
       setStream(null);
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
   }, [stream]);
@@ -300,6 +340,9 @@ function CameraContent() {
 
       if (isCameraActive && videoRef.current) {
         const video = videoRef.current;
+        if (video.videoWidth === 0 || video.videoHeight === 0) {
+          throw new Error('Camera is still initializing. Please wait a second for the feed to start and try again.');
+        }
         const scaled = scaleDownImage(video, video.videoWidth, video.videoHeight);
         if (scaled) imagePayload = scaled;
       } else if (selectedImage && selectedImage.startsWith('blob:')) {
@@ -399,7 +442,7 @@ function CameraContent() {
 
     fireConfetti();
     setTimeout(() => {
-      router.push(`/?date=${formatDateKey(targetDate)}`);
+      router.push(`/?date=${formatDateKey(targetDate)}&celebrate=true`);
     }, 1200);
   };
 
@@ -458,10 +501,19 @@ function CameraContent() {
             <div className="absolute inset-0">
               {isCameraActive ? (
                 <video
-                  ref={videoRef}
+                  ref={(el) => {
+                    (videoRef as React.MutableRefObject<HTMLVideoElement | null>).current = el;
+                    if (el && stream && el.srcObject !== stream) {
+                      el.srcObject = stream;
+                      el.play().catch(() => {});
+                    }
+                  }}
                   autoPlay
                   playsInline
                   muted
+                  onLoadedMetadata={(e) => {
+                    e.currentTarget.play().catch(() => {});
+                  }}
                   className="w-full h-full object-cover"
                 />
               ) : selectedImage ? (

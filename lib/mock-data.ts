@@ -21,14 +21,31 @@ export interface DailyTargets {
   water_target_ml: number;
 }
 
+export interface Badge {
+  id: string;
+  title: string;
+  icon: string;
+  description: string;
+  unlocked: boolean;
+  date_unlocked?: string;
+  category: 'streak' | 'nutrition' | 'camera' | 'level';
+}
+
 export interface Profile {
   id: string;
   email: string;
   display_name: string;
   avatar_url: string;
+  avatar_mascot?: 'happy' | 'chewing' | 'celebrating' | 'thinking';
   streak_count: number;
+  best_streak: number;
+  streak_freezes: number;
+  xp: number;
   level: number;
   level_name: string;
+  league: 'Bronze' | 'Silver' | 'Gold' | 'Emerald' | 'Diamond';
+  joined_date: string;
+  badges: Badge[];
 }
 
 export interface Goal {
@@ -69,15 +86,112 @@ export interface RxSuggestion {
   dietitian_note: string;
 }
 
+export const DEFAULT_BADGES: Badge[] = [
+  {
+    id: 'badge-1',
+    title: '5-Day Streak Flame',
+    icon: '🔥',
+    description: 'Logged meals for 5 consecutive days',
+    unlocked: true,
+    date_unlocked: '2026-10-12',
+    category: 'streak',
+  },
+  {
+    id: 'badge-2',
+    title: 'Veggie Royalty',
+    icon: '🥦',
+    description: 'Filled half your plate with greens on 5 meals',
+    unlocked: true,
+    date_unlocked: '2026-10-10',
+    category: 'nutrition',
+  },
+  {
+    id: 'badge-3',
+    title: 'Magic Scanner',
+    icon: '📸',
+    description: 'Analyzed food portions using the AI camera',
+    unlocked: true,
+    date_unlocked: '2026-10-08',
+    category: 'camera',
+  },
+  {
+    id: 'badge-4',
+    title: 'Salt Tamer',
+    icon: '🧂',
+    description: 'Stayed under doctor sodium limit 3 days in a row',
+    unlocked: false,
+    category: 'nutrition',
+  },
+  {
+    id: 'badge-5',
+    title: 'Wildfire (14-Day)',
+    icon: '⚡',
+    description: 'Reach a 14-day eating balance streak',
+    unlocked: false,
+    category: 'streak',
+  },
+  {
+    id: 'badge-6',
+    title: 'Portion Champion',
+    icon: '🏆',
+    description: 'Achieve Diamond League status with 1,000+ XP',
+    unlocked: false,
+    category: 'level',
+  },
+];
+
 export const INITIAL_PROFILE: Profile = {
   id: 'demo-user-123',
   email: 'alex@platepal.app',
   display_name: 'Alex Morgan',
   avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  avatar_mascot: 'happy',
   streak_count: 5,
+  best_streak: 12,
+  streak_freezes: 1,
+  xp: 480,
   level: 3,
   level_name: 'Portion Pro',
+  league: 'Gold',
+  joined_date: 'Oct 2026',
+  badges: DEFAULT_BADGES,
 };
+
+export const DEMO_PROFILES: Profile[] = [
+  INITIAL_PROFILE,
+  {
+    id: 'demo-user-456',
+    email: 'sam.taylor@platepal.app',
+    display_name: 'Sam Taylor',
+    avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
+    avatar_mascot: 'celebrating',
+    streak_count: 9,
+    best_streak: 15,
+    streak_freezes: 2,
+    xp: 790,
+    level: 4,
+    level_name: 'Plate Master',
+    league: 'Emerald',
+    joined_date: 'Sep 2026',
+    badges: DEFAULT_BADGES.map((b) => (b.id === 'badge-4' ? { ...b, unlocked: true } : b)),
+  },
+  {
+    id: 'demo-user-789',
+    email: 'jordan.lee@platepal.app',
+    display_name: 'Jordan Lee',
+    avatar_url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
+    avatar_mascot: 'chewing',
+    streak_count: 2,
+    best_streak: 4,
+    streak_freezes: 0,
+    xp: 180,
+    level: 2,
+    level_name: 'Healthy Explorer',
+    league: 'Silver',
+    joined_date: 'Oct 2026',
+    badges: DEFAULT_BADGES.slice(0, 2),
+  },
+];
 
 export const INITIAL_DAILY_TARGETS: DailyTargets = {
   calorie_target: 2000,

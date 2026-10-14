@@ -8,7 +8,7 @@ import { Chip } from '@/components/ui/Chip';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { PortionCard } from '@/components/ui/PortionCard';
 import { Mascot, type MascotExpression } from '@/components/mascot/Mascot';
-import { ResponsiveSheet } from '@/components/ui/ResponsiveSheet';
+import { StreakModal } from '@/components/streak/StreakModal';
 import { fireConfetti } from '@/components/effects/Confetti';
 import { formatDateKey } from '@/components/calendar/MealPlannerCalendar';
 import { DataLayer } from '@/lib/data-layer';
@@ -43,6 +43,8 @@ function HomePageContent() {
   const searchParams = useSearchParams();
   const dateParam = searchParams.get('date');
 
+  const celebrateParam = searchParams.get('celebrate');
+
   const [profile, setProfile] = useState<Profile | null>(null);
   const [targets, setTargets] = useState<DailyTargets | null>(null);
   const [meals, setMeals] = useState<Meal[]>([]);
@@ -68,6 +70,14 @@ function HomePageContent() {
   }, [dateParam]);
 
   useEffect(() => {
+    if (celebrateParam === 'true') {
+      setIsStreakModalOpen(true);
+      setMascotMood('celebrating');
+      fireConfetti({ particleCount: 40 });
+    }
+  }, [celebrateParam]);
+
+  useEffect(() => {
     async function loadData() {
       const p = await DataLayer.getProfile();
       const t = await DataLayer.getDailyTargets();
@@ -77,12 +87,26 @@ function HomePageContent() {
       setMeals(m);
     }
     loadData();
+
+    const handleProfileUpdate = () => {
+      loadData();
+    };
+    window.addEventListener('plate_pal_profile_update', handleProfileUpdate);
+    return () => {
+      window.removeEventListener('plate_pal_profile_update', handleProfileUpdate);
+    };
   }, []);
 
   // Filter meals for the currently selected calendar date
   const displayedMeals = useMemo(
     () => DataLayer.filterMealsByDate(meals, selectedDate),
     [meals, selectedDate]
+  );
+
+  // Compute dynamic streak
+  const streakInfo = useMemo(
+    () => DataLayer.calculateStreak(meals, profile || undefined),
+    [meals, profile]
   );
 
   const isToday = formatDateKey(selectedDate) === formatDateKey(new Date());
@@ -155,15 +179,23 @@ function HomePageContent() {
         {/* Streak & Level Chips (Clickable) */}
         <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
           <Chip
-            label={`${profile?.streak_count || 5} Day Streak`}
+            label={`${streakInfo?.currentStreak ?? profile?.streak_count ?? 5} Day Streak`}
             variant="peach"
             active
-            icon={<Flame className="w-4 h-4 text-orange-500 fill-orange-400" />}
+            icon={
+              <Flame
+                className={`w-4 h-4 ${
+                  streakInfo?.isLoggedToday
+                    ? 'text-orange-500 fill-orange-400 animate-pulse'
+                    : 'text-amber-500 fill-amber-300'
+                }`}
+              />
+            }
             onClick={handleOpenStreak}
             size="md"
           />
           <Chip
-            label={`Lv. ${profile?.level || 3} Pro`}
+            label={`Lv. ${profile?.level || 3} ${profile?.league ? `• ${profile.league}` : 'Pro'}`}
             variant="butter"
             active
             icon={<Award className="w-4 h-4 text-amber-600" />}
@@ -490,55 +522,14 @@ function HomePageContent() {
         </div>
       </div>
 
-      {/* Streak & Level Dialog */}
-      <ResponsiveSheet
+      {/* Duolingo Streak & Milestones Dialog */}
+      <StreakModal
         isOpen={isStreakModalOpen}
         onClose={() => setIsStreakModalOpen(false)}
-        title="Streak & Portion Milestones"
-      >
-        <div className="text-center py-2 space-y-4">
-          <div className="w-20 h-20 mx-auto rounded-3xl bg-orange-50 border-2 border-orange-200 flex items-center justify-center">
-            <Mascot expression="celebrating" size="md" />
-          </div>
-
-          <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-orange-600 bg-orange-100/80 px-3 py-1 rounded-full border border-orange-200">
-              5 Days in a Row!
-            </span>
-            <h3 className="text-xl font-black text-stone-900 mt-2">
-              You&apos;re a Level 3 Portion Pro!
-            </h3>
-            <p className="text-xs sm:text-sm text-stone-600 max-w-sm mx-auto mt-1">
-              Plate Pal awards points every time you fill 50% of your plate with vegetables and stay
-              within your doctor sodium limits.
-            </p>
-          </div>
-
-          {/* Stats Bar */}
-          <div className="grid grid-cols-3 gap-2 bg-stone-50 rounded-2xl p-3 border border-stone-200 text-center">
-            <div>
-              <span className="text-[11px] font-semibold text-stone-500">Average Score</span>
-              <p className="text-base font-black text-emerald-700">9.5 ⭐</p>
-            </div>
-            <div>
-              <span className="text-[11px] font-semibold text-stone-500">Days Logged</span>
-              <p className="text-base font-black text-orange-600">5 / 7</p>
-            </div>
-            <div>
-              <span className="text-[11px] font-semibold text-stone-500">Next Level</span>
-              <p className="text-base font-black text-amber-700">Lv. 4</p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsStreakModalOpen(false)}
-            className="w-full py-3 rounded-full bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 transition-colors shadow-md cursor-pointer"
-          >
-            Awesome, Let&apos;s Keep Eating Well!
-          </button>
-        </div>
-      </ResponsiveSheet>
+        streakInfo={streakInfo}
+        profile={profile}
+        onProfileUpdate={(updated) => setProfile(updated)}
+      />
     </div>
   );
 }

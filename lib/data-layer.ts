@@ -1,6 +1,7 @@
 import { isSupabaseConfigured, createClient } from './supabase/client';
 import {
   INITIAL_PROFILE,
+  DEMO_PROFILES,
   INITIAL_DAILY_TARGETS,
   INITIAL_GOALS,
   INITIAL_MEALS,
@@ -13,6 +14,20 @@ import {
   type RxSuggestion,
   type NextMealOption,
 } from './mock-data';
+
+export interface StreakInfo {
+  currentStreak: number;
+  bestStreak: number;
+  isLoggedToday: boolean;
+  streakStatus: 'active' | 'at_risk' | 'frozen';
+  weekDays: {
+    dayName: string;
+    dayLabel: string;
+    dateKey: string;
+    isLogged: boolean;
+    isToday: boolean;
+  }[];
+}
 
 const STORAGE_KEYS = {
   MEALS: 'plate_pal_meals',
@@ -63,15 +78,27 @@ export const DataLayer = {
               email: data.email ?? user.email ?? '',
               display_name: data.display_name ?? 'Plate Pal Friend',
               avatar_url: data.avatar_url ?? INITIAL_PROFILE.avatar_url,
+              avatar_mascot: data.avatar_mascot ?? INITIAL_PROFILE.avatar_mascot,
               streak_count: data.streak_count ?? 5,
+              best_streak: data.best_streak ?? 12,
+              streak_freezes: data.streak_freezes ?? 1,
+              xp: data.xp ?? 480,
               level: data.level ?? 3,
-              level_name: 'Portion Pro',
+              level_name: data.level_name ?? 'Portion Pro',
+              league: data.league ?? 'Gold',
+              joined_date: data.joined_date ?? 'Oct 2026',
+              badges: INITIAL_PROFILE.badges,
             };
           }
         }
       }
     }
-    return getStored<Profile>(STORAGE_KEYS.PROFILE, INITIAL_PROFILE);
+    const stored = getStored<Profile>(STORAGE_KEYS.PROFILE, INITIAL_PROFILE);
+    return {
+      ...INITIAL_PROFILE,
+      ...stored,
+      badges: stored.badges && stored.badges.length > 0 ? stored.badges : INITIAL_PROFILE.badges,
+    };
   },
 
   async getGoals(): Promise<Goal[]> {
@@ -220,6 +247,49 @@ export const DataLayer = {
     const currentMeals = await this.getMeals();
     const updatedMeals = [newMeal, ...currentMeals];
     setStored(STORAGE_KEYS.MEALS, updatedMeals);
+
+    // Duolingo-style XP and streak reward
+    try {
+      const currentProfile = await this.getProfile();
+      const streakInfo = this.calculateStreak(updatedMeals, currentProfile);
+      const xpBonus = newMeal.portion_score >= 9.0 ? 70 : 50;
+      const newXp = (currentProfile.xp || 0) + xpBonus;
+      const newLevel = Math.max(currentProfile.level || 1, Math.floor(newXp / 250) + 1);
+
+      const levelNames = [
+        'Beginner Eater',
+        'Healthy Explorer',
+        'Portion Pro',
+        'Plate Master',
+        'Nutrition Wizard',
+        'Diamond Champion',
+      ];
+      const newLevelName = levelNames[Math.min(newLevel - 1, levelNames.length - 1)];
+
+      const leagueTiers: Profile['league'][] = ['Bronze', 'Silver', 'Gold', 'Emerald', 'Diamond'];
+      const leagueIndex = Math.min(Math.floor(newXp / 300), leagueTiers.length - 1);
+      const newLeague = leagueTiers[leagueIndex];
+
+      const updatedBadges = currentProfile.badges.map((b) => {
+        if (b.id === 'badge-1' && streakInfo.currentStreak >= 5) return { ...b, unlocked: true };
+        if (b.id === 'badge-3') return { ...b, unlocked: true };
+        if (b.id === 'badge-5' && streakInfo.currentStreak >= 14) return { ...b, unlocked: true };
+        return b;
+      });
+
+      await this.updateProfile({
+        xp: newXp,
+        level: newLevel,
+        level_name: newLevelName,
+        league: newLeague,
+        streak_count: streakInfo.currentStreak,
+        best_streak: streakInfo.bestStreak,
+        badges: updatedBadges,
+      });
+    } catch {
+      // ignore
+    }
+
     return newMeal;
   },
 
@@ -283,5 +353,179 @@ export const DataLayer = {
 
   getNextMealOptions(): NextMealOption[] {
     return NEXT_MEAL_OPTIONS;
+  },
+
+  calculateStreak(meals: Meal[], profile?: Profile): StreakInfo {
+    const datesSet = new Set<string>();
+    meals.forEach((m) => {
+      const d = new Date(m.logged_at);
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const mo = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        datesSet.add(`${y}-${mo}-${day}`);
+      }
+    });
+
+    const now = new Date();
+    const formatDate = (date: Date) => {
+      const y = date.getFullYear();
+      const mo = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${y}-${mo}-${day}`;
+    };
+
+    const todayKey = formatDate(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = formatDate(yesterday);
+
+    const isLoggedToday = datesSet.has(todayKey);
+    const isLoggedYesterday = datesSet.has(yesterdayKey);
+
+    let streak = 0;
+    let checkDate = new Date(now);
+    let streakStatus: 'active' | 'at_risk' | 'frozen' = 'at_risk';
+
+    if (isLoggedToday) {
+      streakStatus = 'active';
+      while (datesSet.has(formatDate(checkDate))) {
+        streak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      }
+    } else if (isLoggedYesterday) {
+      streakStatus = 'at_risk';
+      checkDate = new Date(yesterday);
+      while (datesSet.has(formatDate(checkDate))) {
+        streak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      }
+    } else {
+      const twoDaysAgo = new Date(now);
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+      if ((profile?.streak_freezes ?? 0) > 0 && datesSet.has(formatDate(twoDaysAgo))) {
+        streakStatus = 'frozen';
+        checkDate = new Date(twoDaysAgo);
+        while (datesSet.has(formatDate(checkDate))) {
+          streak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        }
+      } else {
+        streak = 0;
+        streakStatus = 'at_risk';
+      }
+    }
+
+    const currentStreak = Math.max(streak, profile?.streak_count ?? 1);
+    const bestStreak = Math.max(currentStreak, profile?.best_streak ?? 12);
+
+    const dayOfWeek = now.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(monday.getDate() + mondayOffset);
+
+    const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    const weekDays = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(d.getDate() + i);
+      const k = formatDate(d);
+      return {
+        dayName: dayNames[i],
+        dayLabel: dayLabels[i],
+        dateKey: k,
+        isLogged: datesSet.has(k) || (i < 5 && k <= todayKey),
+        isToday: k === todayKey,
+      };
+    });
+
+    return {
+      currentStreak,
+      bestStreak,
+      isLoggedToday,
+      streakStatus,
+      weekDays,
+    };
+  },
+
+  async updateProfile(updates: Partial<Profile>): Promise<Profile> {
+    const current = await this.getProfile();
+    const updated: Profile = {
+      ...current,
+      ...updates,
+    };
+
+    if (this.isLive()) {
+      const supabase = createClient();
+      if (supabase) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase
+            .from('profiles')
+            .update({
+              display_name: updated.display_name,
+              avatar_url: updated.avatar_url,
+              streak_count: updated.streak_count,
+              level: updated.level,
+            })
+            .eq('id', user.id);
+        }
+      }
+    }
+
+    setStored(STORAGE_KEYS.PROFILE, updated);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('plate_pal_profile_update', { detail: updated }));
+    }
+    return updated;
+  },
+
+  async equipStreakFreeze(): Promise<Profile> {
+    const current = await this.getProfile();
+    if (current.streak_freezes >= 2) return current;
+    return this.updateProfile({ streak_freezes: current.streak_freezes + 1 });
+  },
+
+  async switchProfile(profileId: string): Promise<Profile> {
+    const found = DEMO_PROFILES.find((p) => p.id === profileId) || DEMO_PROFILES[0];
+    setStored(STORAGE_KEYS.PROFILE, found);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('plate_pal_profile_update', { detail: found }));
+    }
+    return found;
+  },
+
+  getDemoProfiles(): Profile[] {
+    return DEMO_PROFILES;
+  },
+
+  async loginLocal(displayName: string, email?: string): Promise<Profile> {
+    const current = await this.getProfile();
+    const updated: Profile = {
+      ...current,
+      id: `user-${Date.now()}`,
+      display_name: displayName.trim() || 'Plate Pal Adventurer',
+      email: email?.trim() || `${displayName.toLowerCase().replace(/\s+/g, '')}@platepal.app`,
+      joined_date: 'Oct 2026',
+    };
+    setStored(STORAGE_KEYS.PROFILE, updated);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('plate_pal_profile_update', { detail: updated }));
+    }
+    return updated;
+  },
+
+  async logout(): Promise<void> {
+    if (this.isLive()) {
+      const supabase = createClient();
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
+    }
+    setStored(STORAGE_KEYS.PROFILE, INITIAL_PROFILE);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('plate_pal_profile_update', { detail: INITIAL_PROFILE }));
+    }
   },
 };
