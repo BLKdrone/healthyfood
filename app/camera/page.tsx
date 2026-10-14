@@ -210,6 +210,7 @@ function CameraContent() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const [isCaptured, setIsCaptured] = useState<boolean>(false); // true when selectedImage is a photo taken with the camera
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
 
@@ -265,6 +266,7 @@ function CameraContent() {
       streamRef.current = mediaStream;
       setStream(mediaStream);
       setIsCameraActive(true);
+      setIsCaptured(false);
       setSelectedImage(null);
     } catch (err: unknown) {
       console.error('Camera initialization error:', err);
@@ -308,6 +310,43 @@ function CameraContent() {
     };
   }, []);
 
+  // Freeze the current camera frame into a saved photo, then stop the camera so the user can move freely.
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+      setCameraError('Camera is still starting. Wait a second for the picture to appear, then tap Capture.');
+      return;
+    }
+    const MAX_SIZE = 1280;
+    const ratio = Math.min(1, MAX_SIZE / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(video.videoWidth * ratio);
+    canvas.height = Math.round(video.videoHeight * ratio);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      setCameraError('Could not capture the photo. Please try again or use Upload File.');
+      return;
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+
+    setCameraError(null);
+    setAnalysisResult(null);
+    setAnalysisError(null);
+    setIsLogged(false);
+    setSelectedImage(dataUrl);
+    setIsCaptured(true);
+    stopCamera();
+  };
+
+  const retakePhoto = () => {
+    setIsCaptured(false);
+    setSelectedImage(null);
+    setAnalysisResult(null);
+    setAnalysisError(null);
+    startCamera();
+  };
+
   // Handle Scan action
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
@@ -350,7 +389,7 @@ function CameraContent() {
         }
         const scaled = scaleDownImage(video, video.videoWidth, video.videoHeight);
         if (scaled) imagePayload = scaled;
-      } else if (selectedImage && selectedImage.startsWith('blob:')) {
+      } else if (selectedImage && (selectedImage.startsWith('blob:') || selectedImage.startsWith('data:'))) {
         // Convert blob URL to Image, then scale down
         imagePayload = await new Promise((resolve, reject) => {
           const img = new window.Image();
@@ -394,6 +433,7 @@ function CameraContent() {
     const file = e.target.files?.[0];
     if (file) {
       stopCamera();
+      setIsCaptured(false);
       const objectUrl = URL.createObjectURL(file);
       setSelectedImage(objectUrl);
       setAnalysisResult(null);
@@ -640,7 +680,7 @@ function CameraContent() {
             {/* Top Toolbar overlay on screen */}
             <div className="relative z-30 p-4 pt-10 flex items-center justify-between text-white">
               <span className="text-xs font-bold bg-stone-900/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
-                {isCameraActive ? '🔴 Live Lens' : '📸 Plate Mockup'}
+                {isCameraActive ? '🔴 Live Lens' : isCaptured ? '🖼️ Your Photo' : '📸 Plate Mockup'}
               </span>
 
               {/* Viewfinder Date & Meal Badge */}
@@ -768,9 +808,29 @@ function CameraContent() {
                     </button>
                   </div>
                 </div>
+              ) : isCameraActive ? (
+                /* Live camera: capture a photo first */
+                <div className="flex flex-col items-center">
+                  <button
+                    type="button"
+                    onClick={capturePhoto}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 text-white font-black text-sm shadow-lg hover:brightness-105 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <CameraIcon className="w-4 h-4" /> Capture Photo
+                  </button>
+                </div>
               ) : (
                 /* Primary Scan Button */
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center gap-2">
+                  {isCaptured && (
+                    <button
+                      type="button"
+                      onClick={retakePhoto}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-full bg-stone-800 text-stone-200 text-xs font-bold hover:bg-stone-700 transition-colors cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Retake Photo
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleAnalyze}
@@ -820,6 +880,7 @@ function CameraContent() {
                   type="button"
                   onClick={() => {
                     stopCamera();
+                    setIsCaptured(false);
                     setSelectedImage(dish.url);
                     setMealType(dish.type);
                     setAnalysisResult(null);
