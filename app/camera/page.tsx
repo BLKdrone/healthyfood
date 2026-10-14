@@ -209,6 +209,7 @@ function CameraContent() {
   const [mealType, setMealType] = useState<Meal['meal_type']>(getDefaultMealType);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
 
@@ -261,6 +262,7 @@ function CameraContent() {
         });
       }
 
+      streamRef.current = mediaStream;
       setStream(mediaStream);
       setIsCameraActive(true);
       setSelectedImage(null);
@@ -285,23 +287,26 @@ function CameraContent() {
     }
   }, []);
 
+  // Stable function (no dependency on `stream`) so the unmount cleanup below never fires by accident.
   const stopCamera = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-      setStream(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
+    setStream(null);
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
-  }, [stream]);
+  }, []);
 
-  // Cleanup stream on unmount
+  // Cleanup stream on unmount only
   useEffect(() => {
     return () => {
-      stopCamera();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     };
-  }, [stopCamera]);
+  }, []);
 
   // Handle Scan action
   const handleAnalyze = async () => {
