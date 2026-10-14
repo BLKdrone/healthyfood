@@ -31,12 +31,14 @@ export interface Badge {
   category: 'streak' | 'nutrition' | 'camera' | 'level';
 }
 
+export type MascotExpression = 'happy' | 'thinking' | 'celebrating' | 'chewing' | 'doctor';
+
 export interface Profile {
   id: string;
   email: string;
   display_name: string;
   avatar_url: string;
-  avatar_mascot?: 'happy' | 'chewing' | 'celebrating' | 'thinking';
+  avatar_mascot?: MascotExpression;
   streak_count: number;
   best_streak: number;
   streak_freezes: number;
