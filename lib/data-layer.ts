@@ -13,7 +13,9 @@ import {
   type Meal,
   type RxSuggestion,
   type NextMealOption,
+  type FoodComponent,
 } from './mock-data';
+import { scheduleIntakeReminder, cancelIntakeReminder } from './notifications';
 
 export interface StreakInfo {
   currentStreak: number;
@@ -107,7 +109,7 @@ export const DataLayer = {
       if (supabase) {
         const { data } = await supabase.from('goals').select('*');
         if (data && data.length > 0) {
-          return data.map((g) => ({
+          return data.map((g: any) => ({
             id: g.id,
             goal_key: g.goal_key,
             label: g.label,
@@ -174,7 +176,7 @@ export const DataLayer = {
           .select('*')
           .order('logged_at', { ascending: false });
         if (data && data.length > 0) {
-          return data.map((m) => ({
+          return data.map((m: any) => ({
             id: m.id,
             title: m.title,
             meal_type: m.meal_type,
@@ -208,12 +210,28 @@ export const DataLayer = {
       meal.time_label ||
       new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+    const status = meal.status || 'pending_intake';
+    const estimated_calories = meal.estimated_calories ?? meal.calories;
+    const estimated_sodium_mg = meal.estimated_sodium_mg ?? meal.sodium_mg;
+    const estimated_carbs_g = meal.estimated_carbs_g ?? meal.carbs_g;
+    const estimated_protein_g = meal.estimated_protein_g ?? meal.protein_g;
+
     const newMeal: Meal = {
       ...meal,
       id: `m-${Date.now()}`,
       logged_at: timestamp,
       time_label: timeLabel,
+      status,
+      reminder_scheduled_at: meal.reminder_scheduled_at || timestamp,
+      estimated_calories,
+      estimated_sodium_mg,
+      estimated_carbs_g,
+      estimated_protein_g,
     };
+
+    if (newMeal.status === 'pending_intake') {
+      scheduleIntakeReminder(newMeal.id, newMeal.title, newMeal.logged_at);
+    }
 
     if (this.isLive()) {
       const supabase = createClient();
@@ -336,6 +354,7 @@ export const DataLayer = {
   },
 
   async deleteMeal(id: string): Promise<void> {
+    cancelIntakeReminder(id);
     if (this.isLive()) {
       const supabase = createClient();
       if (supabase) {
@@ -345,6 +364,72 @@ export const DataLayer = {
     const currentMeals = await this.getMeals();
     const updatedMeals = currentMeals.filter((m) => m.id !== id);
     setStored(STORAGE_KEYS.MEALS, updatedMeals);
+  },
+
+  async confirmMealIntake(
+    mealId: string,
+    componentIntakes: Record<string, number>
+  ): Promise<Meal | null> {
+    const currentMeals = await this.getMeals();
+    const targetMeal = currentMeals.find((m) => m.id === mealId);
+    if (!targetMeal) return null;
+
+    const components = (targetMeal.components || []).map((c) => {
+      const intake = componentIntakes[c.id] !== undefined ? componentIntakes[c.id] : (c.recommendedIntakePercent ?? 100);
+      return {
+        ...c,
+        actualIntakePercent: intake,
+      };
+    });
+
+    let actualCalories = 0;
+    let actualSodium = 0;
+    let actualCarbs = 0;
+    let actualProtein = 0;
+
+    if (components.length > 0) {
+      actualCalories = Math.round(
+        components.reduce((sum, c) => sum + (c.calories * ((c.actualIntakePercent ?? 100) / 100)), 0)
+      );
+      actualSodium = Math.round(
+        components.reduce((sum, c) => sum + (c.sodium_mg * ((c.actualIntakePercent ?? 100) / 100)), 0)
+      );
+      actualCarbs = Math.round(
+        components.reduce((sum, c) => sum + (c.carbs_g * ((c.actualIntakePercent ?? 100) / 100)), 0)
+      );
+      actualProtein = Math.round(
+        components.reduce((sum, c) => sum + (c.protein_g * ((c.actualIntakePercent ?? 100) / 100)), 0)
+      );
+    } else {
+      const avgIntake = Object.values(componentIntakes)[0] ?? 100;
+      actualCalories = Math.round((targetMeal.estimated_calories || targetMeal.calories) * (avgIntake / 100));
+      actualSodium = Math.round((targetMeal.estimated_sodium_mg || targetMeal.sodium_mg) * (avgIntake / 100));
+      actualCarbs = Math.round((targetMeal.estimated_carbs_g || targetMeal.carbs_g) * (avgIntake / 100));
+      actualProtein = Math.round((targetMeal.estimated_protein_g || targetMeal.protein_g) * (avgIntake / 100));
+    }
+
+    const updatedMeal: Meal = {
+      ...targetMeal,
+      status: 'intake_confirmed',
+      intake_confirmed_at: new Date().toISOString(),
+      components,
+      calories: actualCalories,
+      sodium_mg: actualSodium,
+      carbs_g: actualCarbs,
+      protein_g: actualProtein,
+    };
+
+    // Cancel 30-min reminder
+    cancelIntakeReminder(mealId);
+
+    const updatedMeals = currentMeals.map((m) => (m.id === mealId ? updatedMeal : m));
+    setStored(STORAGE_KEYS.MEALS, updatedMeals);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('plate_pal_meals_updated', { detail: { mealId } }));
+    }
+
+    return updatedMeal;
   },
 
   getRxSuggestions(): RxSuggestion[] {

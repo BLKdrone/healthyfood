@@ -66,13 +66,23 @@ export default function NextMealPage() {
         day: 'numeric',
       });
 
-  // Consumed before dinner for the chosen date
-  const consumedCalories = dayMeals.reduce((sum, m) => sum + m.calories, 0);
-  const consumedSodium = dayMeals.reduce((sum, m) => sum + m.sodium_mg, 0);
-  const consumedCarbs = dayMeals.reduce((sum, m) => sum + m.carbs_g, 0);
-  const consumedProtein = dayMeals.reduce((sum, m) => sum + m.protein_g, 0);
+  // Separate confirmed vs pending intake meals for the chosen date
+  const confirmedDayMeals = useMemo(
+    () => dayMeals.filter((m) => m.status !== 'pending_intake'),
+    [dayMeals]
+  );
+  const pendingDayMeals = useMemo(
+    () => dayMeals.filter((m) => m.status === 'pending_intake'),
+    [dayMeals]
+  );
 
-  // Baseline remaining before this meal
+  // Consumed actual intake before dinner for the chosen date
+  const consumedCalories = confirmedDayMeals.reduce((sum, m) => sum + m.calories, 0);
+  const consumedSodium = confirmedDayMeals.reduce((sum, m) => sum + m.sodium_mg, 0);
+  const consumedCarbs = confirmedDayMeals.reduce((sum, m) => sum + m.carbs_g, 0);
+  const consumedProtein = confirmedDayMeals.reduce((sum, m) => sum + m.protein_g, 0);
+
+  // Baseline remaining before this meal (calculated from actual confirmed intake)
   const baselineRemaining = {
     calories: Math.max(dailyBudget.calories - consumedCalories, 0),
     sodium: Math.max(dailyBudget.sodium - consumedSodium, 0),
@@ -106,6 +116,11 @@ export default function NextMealPage() {
       friendly_note: `Prescribed meal chosen: ${selectedOption.tag} for ${dateLabel}. Perfect balance!`,
       logged_at: mealDate.toISOString(),
       time_label: '7:00 PM',
+      status: 'pending_intake',
+      estimated_calories: selectedOption.calories,
+      estimated_sodium_mg: selectedOption.sodium_mg,
+      estimated_carbs_g: selectedOption.carbs_g,
+      estimated_protein_g: selectedOption.protein_g,
     });
 
     setMeals((prev) => [newLogged, ...prev]);
@@ -150,21 +165,34 @@ export default function NextMealPage() {
               Logged on {dateLabel}:
             </span>
             <div className="flex flex-wrap gap-1.5">
-              {dayMeals.map((m) => (
-                <span
-                  key={m.id}
-                  className="bg-white border border-emerald-200/90 text-stone-800 font-semibold px-2.5 py-1 rounded-xl shadow-2xs"
-                >
-                  <span className="text-[10px] uppercase font-bold text-emerald-700 mr-1">
-                    {m.meal_type}
+              {dayMeals.map((m) => {
+                const isPending = m.status === 'pending_intake';
+                return (
+                  <span
+                    key={m.id}
+                    className={`border text-stone-800 font-semibold px-2.5 py-1 rounded-xl shadow-2xs flex items-center gap-1 ${
+                      isPending ? 'bg-amber-50/80 border-amber-300' : 'bg-white border-emerald-200/90'
+                    }`}
+                  >
+                    <span className="text-[10px] uppercase font-bold text-emerald-700 mr-1">
+                      {m.meal_type}
+                    </span>
+                    <span>{m.title}</span>
+                    <span className="text-stone-500 text-[11px]">
+                      ({isPending ? `~${m.estimated_calories || m.calories} kcal est.` : `${m.calories} kcal`})
+                    </span>
+                    {isPending && (
+                      <span className="text-[9px] font-black uppercase text-amber-800 bg-amber-200/80 px-1.5 py-0.2 rounded-md">
+                        Pending
+                      </span>
+                    )}
                   </span>
-                  {m.title} ({m.calories} kcal)
-                </span>
-              ))}
+                );
+              })}
             </div>
           </div>
           <span className="text-emerald-800 font-bold whitespace-nowrap bg-white/80 px-2.5 py-1 rounded-lg border border-emerald-200">
-            {consumedCalories} kcal consumed
+            {consumedCalories} kcal confirmed intake
           </span>
         </div>
       ) : (

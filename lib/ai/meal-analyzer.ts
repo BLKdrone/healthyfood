@@ -19,6 +19,16 @@ export interface PlateZone {
   };
   // Outline of the food region as 5-8 points (percent of the full image, 0-100).
   polygon: { x: number; y: number }[];
+  // AI Verification & Nutrition Attributes
+  confidence?: 'high' | 'medium' | 'low';
+  alternatives?: string[];
+  estimatedGrams?: number;
+  calories?: number;
+  sodium_mg?: number;
+  carbs_g?: number;
+  protein_g?: number;
+  isUserEdited?: boolean;
+  userConfirmedName?: string;
 }
 
 // Bounding box of the bowl/plate itself, in percent of the full image (0-100).
@@ -82,6 +92,21 @@ const responseSchema: Schema = {
             enum: ['optimal', 'increase', 'decrease'],
           },
           color: { type: Type.STRING, enum: ['mint', 'peach', 'butter'] },
+          confidence: {
+            type: Type.STRING,
+            enum: ['high', 'medium', 'low'],
+            description: 'AI confidence for this food item identification',
+          },
+          alternatives: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: '2 to 4 selectable food alternatives if uncertain or ambiguous, e.g. Tonkatsu Pork, Tonkatsu Chicken, Fried Fish',
+          },
+          estimatedGrams: { type: Type.NUMBER, description: 'Estimated portion in grams' },
+          calories: { type: Type.NUMBER, description: 'Estimated calories for this component' },
+          sodium_mg: { type: Type.NUMBER, description: 'Estimated sodium in mg for this component' },
+          carbs_g: { type: Type.NUMBER, description: 'Estimated carbs in g for this component' },
+          protein_g: { type: Type.NUMBER, description: 'Estimated protein in g for this component' },
           bubbleMessage: {
             type: Type.STRING,
             description: 'Very short speech-bubble tip, max 28 characters, with one emoji. Example: "Eat more veggies 🥦"',
@@ -176,7 +201,7 @@ export async function analyzeMeal(
                 },
               },
               {
-                text: 'Analyze the food visible in this meal image and return valid JSON matching the schema. Estimate calories, macros, and sodium. Return at least one zone for the visible food; include a separate zone for each visible vegetable, protein, or carbohydrate region. Never return an empty zones array. First return plate: the bounding box of the whole bowl or plate (its outer rim) as ymin, xmin, ymax, xmax on a 0-1000 scale. For each zone, return a polygon of 6 to 10 {y, x} points on a 0-1000 scale (y=0 top, y=1000 bottom, x=0 left, x=1000 right, relative to the full input image) that tightly traces only that food, staying on the food and strictly inside the plate or bowl rim, never on the table or background. Use angled corners, not a plain rectangle, and do not let different zones overlap much. For each zone set actualRatio to the percent of the food on the plate that this zone covers (all zones together should add up to about 100), and targetRatio to the ideal percent for a balanced plate (veggies 50, protein 25, carbs 25). Keep each bubbleMessage under 28 characters. Give a portion score from 0 to 10 and friendly feedback.',  
+                text: 'Analyze the food visible in this meal image and return valid JSON matching the schema. Estimate total dish and per-zone calories, macros (carbs_g, protein_g), and sodium_mg. Return at least one zone for the visible food; include a separate zone for each visible vegetable, protein, or carbohydrate region. Never return an empty zones array. First return plate: the bounding box of the whole bowl or plate (its outer rim) as ymin, xmin, ymax, xmax on a 0-1000 scale. For each zone, return a polygon of 6 to 10 {y, x} points on a 0-1000 scale (y=0 top, y=1000 bottom, x=0 left, x=1000 right, relative to the full input image) that tightly traces only that food, staying on the food and strictly inside the plate or bowl rim, never on the table or background. For each zone set confidence ("high", "medium", or "low"). If confidence is medium or low, or if the food could easily be another dish (e.g. pork vs chicken cutlet, fried fish, tofu), list 2 to 4 likely alternatives. For each zone set actualRatio to the percent of the food on the plate that this zone covers (all zones together should add up to about 100), and targetRatio to the ideal percent for a balanced plate (veggies 50, protein 25, carbs 25). Keep each bubbleMessage under 28 characters. Give a portion score from 0 to 10 and friendly feedback.',
               },
             ],
           },
@@ -188,7 +213,7 @@ export async function analyzeMeal(
       });
 
     const response = await generateContent('gemini-3.1-flash-lite').catch((error: unknown) => {
-      if (!(error instanceof ApiError) || error.status !== 503) throw error;
+      if (!(error instanceof ApiError) || (error as { status?: number }).status !== 503) throw error;
       console.warn('Gemini 3.1 Flash-Lite returned 503; retrying with Gemini 3.5 Flash-Lite.');
       return generateContent('gemini-3.5-flash-lite');
     });
@@ -200,6 +225,12 @@ export async function analyzeMeal(
     const raw = JSON.parse(responseText) as Omit<MealAnalysisResult, 'zones' | 'plate'> & {
       plate?: { ymin: number; xmin: number; ymax: number; xmax: number };
       zones: Array<Omit<PlateZone, 'boxCoords' | 'polygon'> & { polygon?: { x: number; y: number }[] }>;
+    };
+
+    const defaultAlternatives: Record<string, string[]> = {
+      veggies: ['Steamed Garden Vegetables', 'Crispy Fresh Greens', 'Roasted Zucchini & Carrots', 'Kale & Spinach Medley'],
+      protein: ['Herb Grilled Chicken', 'Pan-Seared Salmon', 'Crispy Pork Tonkatsu', 'Golden Fried Fish', 'Glazed Tofu Steak'],
+      carbs: ['Steamed Jasmine Rice', 'Whole Grain Brown Rice', 'Roasted Baby Potatoes', 'Quinoa & Barley Bowl'],
     };
 
     const clamp = (n: number) => Math.min(100, Math.max(0, n));
@@ -214,9 +245,35 @@ export async function analyzeMeal(
       const ys = polygon.map((pt) => pt.y);
       const left = Math.min(...xs);
       const top = Math.min(...ys);
+
+      const isAmbiguous = /cutlet|fry|fried|katsu|patty|nugget|curry|stew|fillet|pork|beef|fish/i.test(zone.name);
+      const confidence: 'high' | 'medium' | 'low' =
+        zone.confidence === 'high' || zone.confidence === 'medium' || zone.confidence === 'low'
+          ? zone.confidence
+          : isAmbiguous
+          ? 'medium'
+          : 'high';
+
+      const alternatives = (Array.isArray(zone.alternatives) && zone.alternatives.length > 0)
+        ? Array.from(new Set([zone.name, ...zone.alternatives]))
+        : Array.from(new Set([zone.name, ...(defaultAlternatives[zone.category] || [])]));
+
+      const ratioFrac = (zone.actualRatio || 30) / 100;
+      const zCalories = zone.calories && zone.calories > 0 ? zone.calories : Math.round((raw.calories || 500) * ratioFrac);
+      const zSodium = zone.sodium_mg && zone.sodium_mg > 0 ? zone.sodium_mg : Math.round((raw.sodium_mg || 400) * ratioFrac);
+      const zCarbs = zone.carbs_g !== undefined ? zone.carbs_g : Math.round((raw.carbs_g || 45) * ratioFrac);
+      const zProtein = zone.protein_g !== undefined ? zone.protein_g : Math.round((raw.protein_g || 25) * ratioFrac);
+
       return [
         {
           ...zone,
+          confidence,
+          alternatives,
+          calories: zCalories,
+          sodium_mg: zSodium,
+          carbs_g: zCarbs,
+          protein_g: zProtein,
+          estimatedGrams: zone.estimatedGrams || Math.round(ratioFrac * 350),
           polygon,
           boxCoords: { top, left, width: Math.max(...xs) - left, height: Math.max(...ys) - top },
         },

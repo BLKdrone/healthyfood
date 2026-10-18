@@ -26,6 +26,9 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  Bell,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -58,6 +61,8 @@ function HomePageContent() {
   });
   const [isStreakModalOpen, setIsStreakModalOpen] = useState(false);
   const [mascotMood, setMascotMood] = useState<MascotExpression>('happy');
+  const [activeReminderMeal, setActiveReminderMeal] = useState<{ id: string; title: string; loggedAt: string } | null>(null);
+  const [dismissedReminderIds, setDismissedReminderIds] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
@@ -85,17 +90,54 @@ function HomePageContent() {
       setProfile(p);
       setTargets(t);
       setMeals(m);
+
+      // Check if any meal is older than 30 minutes and still pending intake
+      const overdue = m.find(
+        (meal) =>
+          meal.status === 'pending_intake' &&
+          Date.now() - new Date(meal.logged_at).getTime() >= 30 * 60 * 1000
+      );
+      if (overdue) {
+        setActiveReminderMeal({
+          id: overdue.id,
+          title: overdue.title,
+          loggedAt: overdue.logged_at,
+        });
+      }
     }
     loadData();
 
     const handleProfileUpdate = () => {
       loadData();
     };
+    const handleMealsUpdate = () => {
+      loadData();
+    };
+    const handleIntakeReminder = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && !dismissedReminderIds[detail.mealId]) {
+        setActiveReminderMeal(detail);
+      }
+    };
+    const handleCancelReminder = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.mealId) {
+        setActiveReminderMeal((prev) => (prev?.id === detail.mealId ? null : prev));
+      }
+    };
+
     window.addEventListener('plate_pal_profile_update', handleProfileUpdate);
+    window.addEventListener('plate_pal_meals_updated', handleMealsUpdate);
+    window.addEventListener('plate_pal_intake_reminder', handleIntakeReminder);
+    window.addEventListener('plate_pal_intake_reminder_cancelled', handleCancelReminder);
+
     return () => {
       window.removeEventListener('plate_pal_profile_update', handleProfileUpdate);
+      window.removeEventListener('plate_pal_meals_updated', handleMealsUpdate);
+      window.removeEventListener('plate_pal_intake_reminder', handleIntakeReminder);
+      window.removeEventListener('plate_pal_intake_reminder_cancelled', handleCancelReminder);
     };
-  }, []);
+  }, [dismissedReminderIds]);
 
   // Filter meals for the currently selected calendar date
   const displayedMeals = useMemo(
@@ -114,18 +156,31 @@ function HomePageContent() {
     ? 'Today'
     : formatFriendlyDate(selectedDate);
 
-  // Compute intake from meals logged on the selected date
-  const totalCalories = displayedMeals.reduce((sum, m) => sum + m.calories, 0);
-  const totalSodium = displayedMeals.reduce((sum, m) => sum + m.sodium_mg, 0);
-  const totalCarbs = displayedMeals.reduce((sum, m) => sum + m.carbs_g, 0);
-  const totalProtein = displayedMeals.reduce((sum, m) => sum + m.protein_g, 0);
+  // Separate confirmed vs pending intake meals
+  const confirmedMeals = useMemo(
+    () => displayedMeals.filter((m) => m.status !== 'pending_intake'),
+    [displayedMeals]
+  );
+  const pendingMeals = useMemo(
+    () => displayedMeals.filter((m) => m.status === 'pending_intake'),
+    [displayedMeals]
+  );
+
+  // Compute actual confirmed intake from meals logged on the selected date
+  const totalCalories = confirmedMeals.reduce((sum, m) => sum + m.calories, 0);
+  const totalSodium = confirmedMeals.reduce((sum, m) => sum + m.sodium_mg, 0);
+  const totalCarbs = confirmedMeals.reduce((sum, m) => sum + m.carbs_g, 0);
+  const totalProtein = confirmedMeals.reduce((sum, m) => sum + m.protein_g, 0);
+
+  // Pending estimated intake
+  const pendingCalories = pendingMeals.reduce((sum, m) => sum + (m.estimated_calories || m.calories), 0);
 
   const calorieTarget = targets?.calorie_target || 2000;
   const sodiumLimit = targets?.sodium_limit_mg || 1800;
   const carbsLimit = targets?.carbs_limit_g || 175;
   const proteinTarget = targets?.protein_target_g || 90;
 
-  // Calorie ring metrics
+  // Calorie ring metrics (reflects actual confirmed intake)
   const calPercent = Math.min((totalCalories / calorieTarget) * 100, 100);
   const strokeDashoffset = 283 - (283 * calPercent) / 100;
 
@@ -204,6 +259,51 @@ function HomePageContent() {
           />
         </div>
       </section>
+
+      {/* 30-Minute Intake Reminder Banner (Requirement 2) */}
+      {activeReminderMeal && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-[24px] p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-fadeIn">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-amber-200/80 border border-amber-300 text-amber-800 flex items-center justify-center shrink-0 shadow-2xs">
+              <Clock className="w-5 h-5 text-amber-700 animate-pulse" />
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-1 text-[10px] uppercase font-black tracking-wider text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded-full mb-1">
+                <Bell className="w-3 h-3 text-amber-700" /> 30-Minute Intake Reminder
+              </div>
+              <h3 className="text-sm sm:text-base font-black text-amber-950">
+                Did you finish &quot;{activeReminderMeal.title}&quot;?
+              </h3>
+              <p className="text-xs text-amber-900/90 mt-0.5">
+                You logged this meal over 30 minutes ago. Please record what you actually ate so your doctor&apos;s nutrition budget stays accurate!
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setDismissedReminderIds((prev) => ({ ...prev, [activeReminderMeal.id]: true }));
+                setActiveReminderMeal(null);
+              }}
+              className="text-xs font-bold text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-100 border border-stone-300 px-3.5 py-2 rounded-xl transition-colors cursor-pointer"
+            >
+              Later
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const card = document.getElementById(`meal-${activeReminderMeal.id}`);
+                card?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="text-xs font-black text-white bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded-xl shadow-xs transition-colors cursor-pointer"
+            >
+              Record Intake Now 🥣
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Date Navigator Bar (Correlated with Calendar) */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-2xl border-2 border-stone-200/90 p-3 sm:px-4 shadow-xs">
@@ -330,7 +430,7 @@ function HomePageContent() {
               </svg>
 
               {/* Inside Ring Numbers */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center select-none">
+              <div className="absolute inset-0 flex flex-col items-center justify-center select-none text-center px-4">
                 <span className="text-3xl font-black text-stone-900 tracking-tight">
                   {totalCalories.toLocaleString()}
                 </span>
@@ -338,8 +438,13 @@ function HomePageContent() {
                   of {calorieTarget.toLocaleString()} kcal
                 </span>
                 <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full mt-1 border border-emerald-200/60">
-                  {Math.round(calPercent)}% consumed
+                  {Math.round(calPercent)}% actual intake
                 </span>
+                {pendingMeals.length > 0 && (
+                  <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-full mt-1 border border-amber-300">
+                    +{pendingCalories} kcal pending ({pendingMeals.length})
+                  </span>
+                )}
               </div>
             </div>
 
@@ -453,6 +558,9 @@ function HomePageContent() {
                 <PortionCard
                   key={meal.id}
                   meal={meal}
+                  onIntakeUpdated={(updated) => {
+                    setMeals((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+                  }}
                   onDelete={async () => {
                     await DataLayer.deleteMeal(meal.id);
                     setMeals((prev) => prev.filter((m) => m.id !== meal.id));

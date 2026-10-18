@@ -1,3 +1,24 @@
+export interface FoodComponent {
+  id: string;
+  name: string;
+  category: 'veggies' | 'protein' | 'carbs';
+  confidence: 'high' | 'medium' | 'low';
+  alternatives?: string[];
+  isUserEdited?: boolean;
+  userConfirmedName?: string;
+  // Estimated share of plate (0-100%) or grams
+  detectedRatio: number;
+  // Magic Plate recommended portion intake percentage (0-100%, e.g., 50% for high carb)
+  recommendedIntakePercent: number;
+  // User confirmed percentage actually eaten (0-100%)
+  actualIntakePercent?: number;
+  // Component nutrient breakdown at 100% of detected portion
+  calories: number;
+  sodium_mg: number;
+  carbs_g: number;
+  protein_g: number;
+}
+
 export interface Meal {
   id: string;
   title: string;
@@ -11,6 +32,16 @@ export interface Meal {
   friendly_note: string;
   logged_at: string;
   time_label: string;
+  // Intake tracking & verification fields
+  status?: 'pending_intake' | 'intake_confirmed';
+  intake_confirmed_at?: string;
+  reminder_scheduled_at?: string;
+  components?: FoodComponent[];
+  // Original AI estimated values before user intake recording
+  estimated_calories?: number;
+  estimated_sodium_mg?: number;
+  estimated_carbs_g?: number;
+  estimated_protein_g?: number;
 }
 
 export interface DailyTargets {
@@ -245,6 +276,12 @@ function getRelativeISO(daysOffset: number, hours: number, minutes: number): str
   return d.toISOString();
 }
 
+function getPastMinutesISO(minutesAgo: number): string {
+  const d = new Date();
+  d.setTime(d.getTime() - minutesAgo * 60 * 1000);
+  return d.toISOString();
+}
+
 export const INITIAL_MEALS: Meal[] = [
   // Today's earlier meals
   {
@@ -260,6 +297,53 @@ export const INITIAL_MEALS: Meal[] = [
     friendly_note: 'Terrific portioning! Healthy monounsaturated fats paired with whole sourdough.',
     logged_at: getRelativeISO(0, 8, 15),
     time_label: '8:15 AM',
+    status: 'intake_confirmed',
+    intake_confirmed_at: getRelativeISO(0, 8, 45),
+    estimated_calories: 410,
+    estimated_sodium_mg: 320,
+    estimated_carbs_g: 38,
+    estimated_protein_g: 18,
+    components: [
+      {
+        id: 'c-1-1',
+        name: 'Whole Grain Sourdough',
+        category: 'carbs',
+        confidence: 'high',
+        detectedRatio: 30,
+        recommendedIntakePercent: 100,
+        actualIntakePercent: 100,
+        calories: 160,
+        sodium_mg: 180,
+        carbs_g: 30,
+        protein_g: 5,
+      },
+      {
+        id: 'c-1-2',
+        name: 'Poached Eggs (2 pcs)',
+        category: 'protein',
+        confidence: 'high',
+        detectedRatio: 25,
+        recommendedIntakePercent: 100,
+        actualIntakePercent: 100,
+        calories: 140,
+        sodium_mg: 120,
+        carbs_g: 1,
+        protein_g: 12,
+      },
+      {
+        id: 'c-1-3',
+        name: 'Fresh Avocado & Greens',
+        category: 'veggies',
+        confidence: 'high',
+        detectedRatio: 45,
+        recommendedIntakePercent: 100,
+        actualIntakePercent: 100,
+        calories: 110,
+        sodium_mg: 20,
+        carbs_g: 7,
+        protein_g: 1,
+      },
+    ],
   },
   {
     id: 'm-2',
@@ -272,8 +356,54 @@ export const INITIAL_MEALS: Meal[] = [
     carbs_g: 62,
     protein_g: 38,
     friendly_note: 'Great 50% vegetable ratio! Sodium was well within our midday budget.',
-    logged_at: getRelativeISO(0, 12, 45),
+    logged_at: getPastMinutesISO(35), // logged 35 minutes ago to demonstrate 30-min intake reminder!
     time_label: '12:45 PM',
+    status: 'pending_intake',
+    reminder_scheduled_at: getPastMinutesISO(35),
+    estimated_calories: 620,
+    estimated_sodium_mg: 580,
+    estimated_carbs_g: 62,
+    estimated_protein_g: 38,
+    components: [
+      {
+        id: 'c-2-1',
+        name: 'Herb Grilled Chicken Breast',
+        category: 'protein',
+        confidence: 'high',
+        alternatives: ['Herb Grilled Chicken Breast', 'Crispy Tofu Steak', 'Roast Turkey Cutlet'],
+        detectedRatio: 25,
+        recommendedIntakePercent: 100,
+        calories: 220,
+        sodium_mg: 240,
+        carbs_g: 2,
+        protein_g: 32,
+      },
+      {
+        id: 'c-2-2',
+        name: 'Mediterranean Garden Salad',
+        category: 'veggies',
+        confidence: 'high',
+        detectedRatio: 50,
+        recommendedIntakePercent: 100,
+        calories: 120,
+        sodium_mg: 80,
+        carbs_g: 15,
+        protein_g: 3,
+      },
+      {
+        id: 'c-2-3',
+        name: 'Herbed Rice & Chickpeas',
+        category: 'carbs',
+        confidence: 'medium', // Demonstrates alternative selection
+        alternatives: ['Herbed Rice & Chickpeas', 'Whole Grain Quinoa', 'Steamed Brown Rice', 'Roast Potatoes'],
+        detectedRatio: 25,
+        recommendedIntakePercent: 75, // Magic Plate recommended eating 3/4
+        calories: 280,
+        sodium_mg: 260,
+        carbs_g: 45,
+        protein_g: 3,
+      },
+    ],
   },
   {
     id: 'm-3',
@@ -288,6 +418,40 @@ export const INITIAL_MEALS: Meal[] = [
     friendly_note: 'Smart low-sodium pick! Antioxidants and protein keep hunger calm.',
     logged_at: getRelativeISO(0, 15, 40),
     time_label: '3:40 PM',
+    status: 'intake_confirmed',
+    intake_confirmed_at: getRelativeISO(0, 15, 50),
+    estimated_calories: 210,
+    estimated_sodium_mg: 75,
+    estimated_carbs_g: 18,
+    estimated_protein_g: 14,
+    components: [
+      {
+        id: 'c-3-1',
+        name: 'Plain Greek Yogurt',
+        category: 'protein',
+        confidence: 'high',
+        detectedRatio: 50,
+        recommendedIntakePercent: 100,
+        actualIntakePercent: 100,
+        calories: 130,
+        sodium_mg: 65,
+        carbs_g: 6,
+        protein_g: 13,
+      },
+      {
+        id: 'c-3-2',
+        name: 'Fresh Blueberries & Walnuts',
+        category: 'veggies',
+        confidence: 'high',
+        detectedRatio: 50,
+        recommendedIntakePercent: 100,
+        actualIntakePercent: 100,
+        calories: 80,
+        sodium_mg: 10,
+        carbs_g: 12,
+        protein_g: 1,
+      },
+    ],
   },
 
   // Yesterday's meals
