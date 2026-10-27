@@ -73,10 +73,14 @@ const SCANNER_ASPECT_RATIO = 9 / 16;
 type Point = { x: number; y: number };
 
 // Map a point (percent of the full image) into the cropped "object-cover" frame.
-function mapPointToCoverFrame(point: Point, sourceAspectRatio: number | null): Point {
-  const imageAspectRatio = sourceAspectRatio ?? SCANNER_ASPECT_RATIO;
-  const visibleWidth = Math.min(1, SCANNER_ASPECT_RATIO / imageAspectRatio);
-  const visibleHeight = Math.min(1, imageAspectRatio / SCANNER_ASPECT_RATIO);
+function mapPointToCoverFrame(
+  point: Point,
+  sourceAspectRatio: number | null,
+  frameAspect: number = SCANNER_ASPECT_RATIO
+): Point {
+  const imageAspectRatio = sourceAspectRatio ?? frameAspect;
+  const visibleWidth = Math.min(1, frameAspect / imageAspectRatio);
+  const visibleHeight = Math.min(1, imageAspectRatio / frameAspect);
   const cropLeft = (1 - visibleWidth) / 2;
   const cropTop = (1 - visibleHeight) / 2;
   return {
@@ -115,13 +119,15 @@ function isValidPolygon(polygon: unknown): polygon is Point[] {
 // Bowl/plate as an ellipse in screen percentages (slightly inset so outlines stay visible at the rim).
 function mapPlateToEllipse(
   plate: PlateArea | undefined,
-  sourceAspectRatio: number | null
+  sourceAspectRatio: number | null,
+  frameAspect: number = SCANNER_ASPECT_RATIO
 ): { cx: number; cy: number; rx: number; ry: number } | null {
   if (!plate) return null;
-  const a = mapPointToCoverFrame({ x: plate.left, y: plate.top }, sourceAspectRatio);
+  const a = mapPointToCoverFrame({ x: plate.left, y: plate.top }, sourceAspectRatio, frameAspect);
   const b = mapPointToCoverFrame(
     { x: plate.left + plate.width, y: plate.top + plate.height },
-    sourceAspectRatio
+    sourceAspectRatio,
+    frameAspect
   );
   const inset = 0.94;
   return {
@@ -173,10 +179,11 @@ function portionAdvice(zone: PlateZone): string {
 // Returns the polygon in screen percentages plus its bubble anchor, or null if it is off-screen.
 function mapZoneToCoverFrame(
   zone: PlateZone,
-  sourceAspectRatio: number | null
+  sourceAspectRatio: number | null,
+  frameAspect: number = SCANNER_ASPECT_RATIO
 ): { points: Point[]; anchorX: number; anchorY: number } | null {
   const source = isValidPolygon(zone.polygon) ? zone.polygon : boxToPolygon(zone.boxCoords);
-  const mapped = source.map((p) => mapPointToCoverFrame(p, sourceAspectRatio));
+  const mapped = source.map((p) => mapPointToCoverFrame(p, sourceAspectRatio, frameAspect));
 
   const xs = mapped.map((p) => p.x);
   const ys = mapped.map((p) => p.y);
@@ -217,6 +224,8 @@ function CameraContent() {
 
   const [mealType, setMealType] = useState<Meal['meal_type']>(getDefaultMealType);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const screenRef = useRef<HTMLDivElement>(null);
+  const [frameAspect, setFrameAspect] = useState<number>(SCANNER_ASPECT_RATIO);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [isCaptured, setIsCaptured] = useState<boolean>(false); // true when selectedImage is a photo taken with the camera
@@ -344,6 +353,19 @@ function CameraContent() {
       })
     );
   };
+
+  // Keep the zone/bubble overlay in sync with the real shape of the camera screen.
+  useEffect(() => {
+    const el = screenRef.current;
+    if (!el) return;
+    const update = () => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) setFrameAspect(el.clientWidth / el.clientHeight);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Connect stream to video element whenever stream and isCameraActive change
   useEffect(() => {
@@ -731,57 +753,33 @@ function CameraContent() {
     }, 1200);
   };
 
+  // Round upload button that sits next to the shutter (like the gallery button in a camera app).
+  const uploadButton = (
+    <label className="flex flex-col items-center gap-1 cursor-pointer select-none">
+      <span className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white/60 bg-white/15 text-white backdrop-blur-md active:scale-90 transition-transform">
+        <Upload className="w-5 h-5" />
+      </span>
+      <span className="text-[11px] font-bold text-white">Upload</span>
+      <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+    </label>
+  );
+
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Title Header */}
-      <div className="text-center max-w-lg mx-auto">
-        <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-sky-700 bg-sky-100/70 px-3 py-1 rounded-full border border-sky-200 mb-2">
-          <Sparkles className="w-3.5 h-3.5" /> Magic Plate Vision
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-black text-stone-900 tracking-tight">
-          Magic Plate Scanner
-        </h1>
-        <p className="text-xs sm:text-sm text-stone-600 mt-1">
-          Hold your plate in the guide or select a meal to see smart portion zones and speech bubbles!
-        </p>
-      </div>
-
-      {/* Interactive Meal Type Selector */}
-      <div className="max-w-md mx-auto">
-        <div className="bg-white rounded-2xl border-2 border-stone-200/90 p-1.5 shadow-xs flex items-center justify-between gap-1">
-          {MEAL_TYPES.map((type) => {
-            const isSelected = mealType === type.id;
-            return (
-              <button
-                key={type.id}
-                type="button"
-                onClick={() => setMealType(type.id)}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-1 sm:px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-emerald-500 text-white shadow-sm scale-[1.02]'
-                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
-                }`}
-              >
-                <span>{type.icon}</span>
-                <span>{type.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
+    // Phone: fills the screen between the top and the bottom navbar. sm and up: normal page with a phone frame.
+    <div className="fixed inset-x-0 top-0 bottom-[var(--nav)] z-30 overflow-y-auto overscroll-contain bg-[#FFFDF9] animate-fadeIn [--nav:calc(4rem_+_max(1rem,env(safe-area-inset-bottom,0px))_+_2px)] sm:static sm:z-auto sm:overflow-visible sm:bg-transparent">
       {/* Main Container: On Desktop, centered inside a phone-shaped frame */}
-      <div className="max-w-md mx-auto">
+      <div className="sm:mx-auto sm:max-w-md">
         {/* Phone Shaped Outer Frame on Desktop */}
-        <div className="relative rounded-[36px] sm:rounded-[44px] border-[6px] sm:border-[10px] border-stone-800 bg-stone-950 p-2 sm:p-3 shadow-2xl overflow-hidden">
-          {/* Phone Speaker Notch / Island */}
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 h-4 bg-stone-900 rounded-full z-30 flex items-center justify-center">
+        {/* On phones: no frame. From the sm breakpoint up: bezel, padding and notch appear. */}
+        <div className="relative overflow-hidden bg-stone-950 sm:mx-auto sm:w-fit sm:rounded-[44px] sm:border-[10px] sm:border-stone-800 sm:p-3 sm:shadow-2xl">
+          {/* Phone Speaker Notch / Island (desktop/tablet only) */}
+          <div className="hidden sm:flex absolute top-4 left-1/2 -translate-x-1/2 w-28 h-4 bg-stone-900 rounded-full z-30 items-center justify-center">
             <div className="w-3 h-3 rounded-full bg-stone-950 mr-2" />
             <div className="w-10 h-1 bg-stone-800 rounded-full" />
           </div>
 
           {/* Screen Content Viewport */}
-          <div className="relative aspect-[9/16] w-full rounded-[28px] sm:rounded-[36px] overflow-hidden bg-stone-900 flex flex-col justify-between">
+          <div ref={screenRef} className="relative h-[calc(100dvh_-_var(--nav))] w-full overflow-hidden bg-stone-900 flex flex-col justify-between sm:[--h:min(calc(100dvh_-_7rem),46rem)] sm:h-[var(--h)] sm:w-[calc(var(--h)*9/16)] sm:rounded-[36px]">
             {/* Camera Video or Image View */}
             <div className="absolute inset-0">
               {isCameraActive ? (
@@ -822,7 +820,7 @@ function CameraContent() {
 
               {/* Circular Plate Targeting Reticle */}
               <div
-                className={`absolute inset-x-6 top-16 bottom-28 border-4 border-dashed rounded-full pointer-events-none flex items-center justify-center transition-opacity ${analysisResult ? 'opacity-0' : 'border-white/50'
+                className={`absolute left-1/2 top-1/2 aspect-square w-[78%] -translate-x-1/2 -translate-y-1/2 border-4 border-dashed rounded-full pointer-events-none flex items-center justify-center transition-opacity ${analysisResult ? 'opacity-0' : 'border-white/50'
                   }`}
               >
                 <span className="text-[11px] font-bold text-white/80 bg-stone-900/60 backdrop-blur-xs px-3 py-1 rounded-full uppercase tracking-wider">
@@ -834,9 +832,9 @@ function CameraContent() {
               {analysisResult && (
                 <div className="absolute inset-0 pointer-events-none z-20">
                   {(() => {
-                    const plateEllipse = mapPlateToEllipse(analysisResult.plate, analysisImageAspectRatio);
+                    const plateEllipse = mapPlateToEllipse(analysisResult.plate, analysisImageAspectRatio, frameAspect);
                     const shapes = analysisResult.zones.flatMap((zone) => {
-                      const shape = mapZoneToCoverFrame(zone, analysisImageAspectRatio);
+                      const shape = mapZoneToCoverFrame(zone, analysisImageAspectRatio, frameAspect);
                       return shape ? [{ zone, shape }] : [];
                     });
 
@@ -918,26 +916,21 @@ function CameraContent() {
             </div>
 
             {/* Top Toolbar overlay on screen */}
-            <div className="relative z-30 p-4 pt-10 flex items-center justify-between text-white">
-              <span className="text-xs font-bold bg-stone-900/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
-                {isCameraActive ? '🔴 Live Lens' : isCaptured ? '🖼️ Your Photo' : '📸 Plate Mockup'}
-              </span>
-
-              {/* Viewfinder Date & Meal Badge */}
-              <div
-                suppressHydrationWarning
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-stone-900/80 backdrop-blur-md border border-white/20 text-white text-[11px] font-bold shadow-md"
-              >
-                <CalendarIcon className="w-3 h-3 text-emerald-400" />
-                <span suppressHydrationWarning>{dateBadgeLabel}</span>
-                <span className="text-white/40">•</span>
-                <span>
-                  {MEAL_TYPES.find((t) => t.id === mealType)?.icon}{' '}
-                  {MEAL_TYPES.find((t) => t.id === mealType)?.label}
+            <div className="relative z-30 p-3 sm:pt-10 flex flex-col gap-2 text-white">
+              {/* Row 1: status, date, camera on/off */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold bg-stone-900/70 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20 whitespace-nowrap">
+                  {isCameraActive ? '🔴 Live Lens' : isCaptured ? '🖼️ Your Photo' : '📸 Plate Mockup'}
                 </span>
-              </div>
 
-              <div className="flex items-center gap-2">
+                <div
+                  suppressHydrationWarning
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-900/80 backdrop-blur-md border border-white/20 text-white text-[11px] font-bold shadow-md whitespace-nowrap"
+                >
+                  <CalendarIcon className="w-3 h-3 text-emerald-400" />
+                  <span suppressHydrationWarning>{dateBadgeLabel}</span>
+                </div>
+
                 {isCameraActive ? (
                   <button
                     type="button"
@@ -951,12 +944,42 @@ function CameraContent() {
                   <button
                     type="button"
                     onClick={startCamera}
-                    className="flex items-center gap-1 text-xs font-bold bg-emerald-500 hover:bg-emerald-600 px-3 py-1 rounded-full text-white shadow-md transition-colors cursor-pointer"
+                    className="flex items-center gap-1 text-[11px] font-bold bg-emerald-500 hover:bg-emerald-600 px-2.5 py-1 rounded-full text-white shadow-md transition-colors cursor-pointer whitespace-nowrap"
                   >
                     <CameraIcon className="w-3.5 h-3.5" /> Start Camera
                   </button>
                 )}
               </div>
+
+              {/* Row 2: meal type */}
+              <div className="flex items-center gap-1 rounded-2xl bg-stone-900/70 backdrop-blur-md border border-white/20 p-1">
+                {MEAL_TYPES.map((type) => {
+                  const isSelected = mealType === type.id;
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => setMealType(type.id)}
+                      className={`flex-1 min-w-0 flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                        isSelected ? 'bg-emerald-500 text-white shadow-sm' : 'text-white/80 hover:bg-white/10'
+                      }`}
+                    >
+                      <span>{type.icon}</span>
+                      <span className="truncate">{type.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {cameraError && (
+                <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Camera Access Notice</p>
+                    <p className="text-amber-800/90 mt-0.5">{cameraError}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Bottom Actions Overlay on screen */}
@@ -1051,36 +1074,54 @@ function CameraContent() {
                     </button>
                   </div>
                 </div>
-              ) : isCameraActive ? (
-                /* Live camera: capture a photo first */
-                <div className="flex flex-col items-center">
-                  <button
-                    type="button"
-                    onClick={capturePhoto}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 text-white font-black text-sm shadow-lg hover:brightness-105 active:scale-95 transition-all cursor-pointer"
-                  >
-                    <CameraIcon className="w-4 h-4" /> Capture Photo
-                  </button>
-                </div>
               ) : (
-                /* Primary Scan Button */
-                <div className="flex flex-col items-center gap-2">
-                  {isCaptured && (
-                    <button
-                      type="button"
-                      onClick={retakePhoto}
-                      className="w-full flex items-center justify-center gap-2 py-2 rounded-full bg-stone-800 text-stone-200 text-xs font-bold hover:bg-stone-700 transition-colors cursor-pointer"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" /> Retake Photo
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleAnalyze}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 text-white font-black text-sm shadow-lg hover:brightness-105 active:scale-95 transition-all cursor-pointer"
-                  >
-                    <Sparkles className="w-4 h-4" /> Scan & Analyze Plate
-                  </button>
+                /* Shutter row: Upload (left) - round main button (centre) - Retake (right) */
+                <div className="grid grid-cols-3 items-start">
+                  <div className="flex justify-start pl-2">{uploadButton}</div>
+
+                  <div className="flex flex-col items-center gap-2">
+                    {isCameraActive ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={capturePhoto}
+                          aria-label="Take photo"
+                          className="w-16 h-16 rounded-full border-4 border-white bg-white/20 p-1 shadow-lg active:scale-90 transition-transform cursor-pointer"
+                        >
+                          <span className="block w-full h-full rounded-full bg-white" />
+                        </button>
+                        <span className="text-xs font-bold text-white whitespace-nowrap">Tap to take photo</span>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleAnalyze}
+                          aria-label="Scan and analyze plate"
+                          className="w-16 h-16 rounded-full border-4 border-white bg-gradient-to-tr from-emerald-500 to-sky-500 text-white flex items-center justify-center shadow-lg hover:brightness-105 active:scale-90 transition-all cursor-pointer"
+                        >
+                          <Sparkles className="w-7 h-7" />
+                        </button>
+                        <span className="text-xs font-bold text-white whitespace-nowrap">Tap to scan plate</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pr-2">
+                    {isCaptured && !isCameraActive && (
+                      <button
+                        type="button"
+                        onClick={retakePhoto}
+                        aria-label="Retake photo"
+                        className="flex flex-col items-center gap-1 cursor-pointer select-none"
+                      >
+                        <span className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white/60 bg-white/15 text-white backdrop-blur-md active:scale-90 transition-transform">
+                          <RotateCcw className="w-5 h-5" />
+                        </span>
+                        <span className="text-[11px] font-bold text-white">Retake</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1089,7 +1130,7 @@ function CameraContent() {
 
         {/* AI Food Verification & Portion Adjustment Card (Requirement 1) */}
         {analysisResult && verifiedZones.length > 0 && (
-          <div className="mt-6">
+          <div className="mt-6 px-4 pb-6 sm:px-0 sm:pb-0">
             <Card variant="white" className="p-4 sm:p-5 border-2 border-emerald-300 shadow-md space-y-4 animate-fadeIn">
               {/* Header */}
               <div className="flex items-start justify-between gap-3 border-b border-stone-200/80 pb-3">
@@ -1322,71 +1363,6 @@ function CameraContent() {
             </Card>
           </div>
         )}
-
-        {/* Fallback Upload & Preset Picker */}
-        <div className="mt-6 space-y-4">
-          {cameraError && (
-            <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold">Camera Access Notice</p>
-                <p className="text-amber-800/90 mt-0.5">{cameraError}</p>
-              </div>
-            </div>
-          )}
-
-          <Card variant="white" className="p-4 sm:p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-stone-600">
-                Test With Sample Dishes or Upload
-              </h4>
-              <label className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200 px-3 py-1 rounded-full cursor-pointer hover:bg-sky-100 transition-colors">
-                <Upload className="w-3.5 h-3.5" /> Upload File
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
-            </div>
-
-            {/* Preset Thumbnail Pills */}
-            <div className="grid grid-cols-3 gap-2">
-              {SAMPLE_DISHES.map((dish) => (
-                <button
-                  key={dish.name}
-                  type="button"
-                  onClick={() => {
-                    stopCamera();
-                    setIsCaptured(false);
-                    setSelectedImage(dish.url);
-                    setMealType(dish.type);
-                    setAnalysisResult(null);
-                    setAnalysisError(null);
-                  }}
-                  className={`p-1.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${selectedImage === dish.url
-                    ? 'border-emerald-500 bg-emerald-50/70 shadow-sm'
-                    : 'border-stone-200 bg-stone-50 hover:bg-stone-100'
-                    }`}
-                >
-                  <div className="relative w-full h-16 rounded-xl overflow-hidden mb-1.5 bg-stone-200">
-                    <Image
-                      src={dish.url}
-                      alt={dish.name}
-                      fill
-                      className="object-cover"
-                      sizes="120px"
-                    />
-                  </div>
-                  <span className="text-[11px] font-bold text-stone-800 line-clamp-1 block">
-                    {dish.name}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </Card>
-        </div>
       </div>
     </div>
   );
